@@ -1,0 +1,5 @@
+{
+  "name": "DreamPath: 진로 및 학과 추천 시스템",
+  "description": "고등학생의 취향, 좋아하는 과목, 장래희망을 분석하여 최적의 대학 학과와 커리큘럼을 추천해주는 서비스입니다.",
+  "requestFramePermissions": []
+}
