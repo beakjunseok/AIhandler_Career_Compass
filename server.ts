@@ -42,6 +42,14 @@ async function startServer() {
     const geminiApiKey = process.env.GEMINI_API_KEY;
     const careerNetApiKey = process.env.CAREERNET_API_KEY;
 
+    console.log("--- New Request ---");
+    console.log("Method:", req.method);
+    console.log("Path:", req.path);
+    console.log("Body:", JSON.stringify(req.body));
+    console.log("GEMINI_API_KEY exists:", !!geminiApiKey);
+
+    console.log("Recommendation requested for:", userInput.careerGoal);
+
     if (!geminiApiKey) {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
     }
@@ -57,7 +65,7 @@ async function startServer() {
       `;
 
       const kwResponse = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         contents: keywordPrompt,
         config: {
           responseMimeType: "application/json",
@@ -98,7 +106,7 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         contents: finalPrompt,
         config: {
           responseMimeType: "application/json",
