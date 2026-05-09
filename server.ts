@@ -43,90 +43,86 @@ app.post("/api/recommend", async (req, res) => {
     return res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
   }
 
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
-    try {
-      // 1. Generate search keywords using Gemini
-      const keywordPrompt = `
-        학생의 정보를 바탕으로 커리어넷 학과 정보 검색을 위한 핵심 키워드 3개를 뽑아주세요.
-        정보: ${userInput.interests}, ${userInput.favoriteSubjects}, ${userInput.careerGoal}, 학년: ${userInput.grade}
-        반환 형식: ["키워드1", "키워드2", "키워드3"]
-      `;
+  try {
+    // 1. Generate search keywords using Gemini
+    const keywordPrompt = `
+      학생의 정보를 바탕으로 커리어넷 학과 정보 검색을 위한 핵심 키워드 3개를 뽑아주세요.
+      정보: ${userInput.interests}, ${userInput.favoriteSubjects}, ${userInput.careerGoal}, 학년: ${userInput.grade}
+      반환 형식: ["키워드1", "키워드2", "키워드3"]
+    `;
 
-      const kwResult = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: keywordPrompt,
-        config: {
-          responseMimeType: "application/json",
-        }
-      });
-      const keywords = JSON.parse(kwResult.text);
-
-      // 2. Fetch data from CareerNet API
-      let apiData: any[] = [];
-      if (careerNetApiKey) {
-        const url = `https://www.career.go.kr/cnet/openapi/getOpenApi?apiKey=${careerNetApiKey}&svcType=api&svcCode=MAJOR&contentType=json&gubun=univ_list&searchTitle=${encodeURIComponent(keywords[0])}`;
-        const response = await fetch(url);
-        const json = await response.json();
-        apiData = json.dataSearch?.content || [];
+    const kwResult = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [{ role: "user", parts: [{ text: keywordPrompt }] }],
+      config: {
+        responseMimeType: "application/json",
       }
+    });
+    
+    if (!kwResult.text) throw new Error("Gemini keyword generation failed");
+    const keywords = JSON.parse(kwResult.text);
 
-      // 3. Final recommendation using Gemini
-      const finalPrompt = `
-        당신은 고등학생을 위한 진로 및 진학 상담 전문가입니다.
-        학생의 정보와 실제 학과 데이터를 바탕으로 가장 적합한 대학 학과 5곳을 추천해주세요.
-        
-        학생 정보:
-        - 학년: ${userInput.grade}
-        - 취향/관심사: ${userInput.interests}
-        - 좋아하는 과목: ${userInput.favoriteSubjects}
-        - 장래희망: ${userInput.careerGoal}
-        
-        참고할 실제 학과 데이터 (커리어넷 검색 결과):
-        ${JSON.stringify(apiData.slice(0, 10))}
-        
-        반환 형식은 JSON 배열이어야 하며 각 객체는 다음 필드를 포함해야 합니다: schoolName, departmentName, description, curriculum(배열), matchReason, careerPaths(배열), gradeSpecificAdvice.
-      `;
+    // 2. Fetch data from CareerNet API
+    let apiData: any[] = [];
+    if (careerNetApiKey) {
+      const url = `https://www.career.go.kr/cnet/openapi/getOpenApi?apiKey=${careerNetApiKey}&svcType=api&svcCode=MAJOR&contentType=json&gubun=univ_list&searchTitle=${encodeURIComponent(keywords[0])}`;
+      const response = await fetch(url);
+      const json = await response.json();
+      apiData = json.dataSearch?.content || [];
+    }
 
-      const finalResult = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: finalPrompt,
-        config: {
-          responseMimeType: "application/json",
-        }
-      });
+    // 3. Final recommendation using Gemini
+    const finalPrompt = `
+      당신은 고등학생을 위한 진로 및 진학 상담 전문가입니다.
+      학생의 정보와 실제 학과 데이터를 바탕으로 가장 적합한 대학 학과 5곳을 추천해주세요.
+      
+      학생 정보:
+      - 학년: ${userInput.grade}
+      - 취향/관심사: ${userInput.interests}
+      - 좋아하는 과목: ${userInput.favoriteSubjects}
+      - 장래희망: ${userInput.careerGoal}
+      
+      참고할 실제 학과 데이터 (커리어넷 검색 결과):
+      ${JSON.stringify(apiData.slice(0, 10))}
+      
+      반환 형식은 JSON 배열이어야 하며 각 객체는 다음 필드를 포함해야 합니다: schoolName, departmentName, description, curriculum(배열), matchReason, careerPaths(배열), gradeSpecificAdvice.
+    `;
 
-      res.json(JSON.parse(finalResult.text));
-  } catch (error) {
+    const finalResult = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    if (!finalResult.text) throw new Error("Gemini recommendation failed");
+    res.json(JSON.parse(finalResult.text));
+  } catch (error: any) {
     console.error("Recommendation Error:", error);
-    res.status(500).json({ error: "Failed to generate recommendations" });
+    res.status(500).json({ error: error.message || "Failed to generate recommendations" });
   }
 });
 
-// Setup Vite or Static Files
-async function setupServer() {
-  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+// Setup Vite only for local development
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  const setupLocalServer = async () => {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-    
     const PORT = 3000;
     app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Local dev server running on http://localhost:${PORT}`);
     });
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  };
+  setupLocalServer();
 }
 
-setupServer();
-
 export default app;
+
 
 
