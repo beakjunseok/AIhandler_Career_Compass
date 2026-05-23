@@ -6,9 +6,10 @@ type AuthState = {
   session: Session | null;
   user: User | null;
   displayName: string | null;
+  displayGrade: string | null;
   loading: boolean;
-  signIn: (name: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (name: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (username: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (username: string, password: string, grade: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 };
 
@@ -18,7 +19,6 @@ const SYNTH_EMAIL_DOMAIN = "dreampath.local";
 
 function nameToSyntheticEmail(rawName: string): string {
   const trimmed = rawName.trim().toLowerCase();
-  // base64url-encode so non-ASCII (e.g. Korean) names stay valid in email syntax
   const utf8 = unescape(encodeURIComponent(trimmed));
   const encoded = btoa(utf8)
     .replace(/=+$/g, "")
@@ -27,16 +27,24 @@ function nameToSyntheticEmail(rawName: string): string {
   return `${encoded}@${SYNTH_EMAIL_DOMAIN}`;
 }
 
+function readMeta<T = string>(user: User | null, key: string): T | null {
+  if (!user) return null;
+  const meta = user.user_metadata as Record<string, unknown> | null;
+  const v = meta?.[key];
+  return (v as T) ?? null;
+}
+
 function readDisplayName(user: User | null): string | null {
   if (!user) return null;
-  const meta = user.user_metadata as { display_name?: unknown } | null;
-  const name = meta?.display_name;
+  const name = readMeta<string>(user, "display_name");
   if (typeof name === "string" && name.length > 0) return name;
-  // Fallback for legacy real-email accounts
-  if (user.email && !user.email.endsWith(`@${SYNTH_EMAIL_DOMAIN}`)) {
-    return user.email;
-  }
+  if (user.email && !user.email.endsWith(`@${SYNTH_EMAIL_DOMAIN}`)) return user.email;
   return null;
+}
+
+function readDisplayGrade(user: User | null): string | null {
+  const g = readMeta<string>(user, "grade");
+  return typeof g === "string" && g.length > 0 ? g : null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -54,34 +62,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const signIn: AuthState["signIn"] = async (name, password) => {
-    const cleaned = name.trim();
-    if (!cleaned) return { error: "이름을 입력해주세요." };
+  const signIn: AuthState["signIn"] = async (username, password) => {
+    const cleaned = username.trim();
+    if (!cleaned) return { error: "사용자명을 입력해주세요." };
     const { error } = await supabase.auth.signInWithPassword({
       email: nameToSyntheticEmail(cleaned),
       password,
     });
-    if (error) {
-      // Supabase returns "Invalid login credentials" for both wrong name and wrong password
-      return { error: "이름 또는 비밀번호가 올바르지 않습니다." };
-    }
+    if (error) return { error: "사용자명 또는 비밀번호가 올바르지 않습니다." };
     return { error: null };
   };
 
-  const signUp: AuthState["signUp"] = async (name, password) => {
-    const cleaned = name.trim();
-    if (!cleaned) return { error: "이름을 입력해주세요." };
-    if (cleaned.length > 40) return { error: "이름은 40자 이하여야 합니다." };
+  const signUp: AuthState["signUp"] = async (username, password, grade) => {
+    const cleaned = username.trim();
+    if (!cleaned) return { error: "사용자명을 입력해주세요." };
+    if (cleaned.length > 40) return { error: "사용자명은 40자 이하여야 합니다." };
+    if (!["1", "2", "3"].includes(grade)) return { error: "학년을 선택해주세요." };
+
     const { error } = await supabase.auth.signUp({
       email: nameToSyntheticEmail(cleaned),
       password,
       options: {
-        data: { display_name: cleaned },
+        data: { display_name: cleaned, grade },
       },
     });
     if (error) {
       if (/already|registered|exists/i.test(error.message)) {
-        return { error: "이미 사용 중인 이름입니다." };
+        return { error: "이미 사용 중인 사용자명입니다." };
       }
       return { error: error.message };
     }
@@ -98,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user: session?.user ?? null,
         displayName: readDisplayName(session?.user ?? null),
+        displayGrade: readDisplayGrade(session?.user ?? null),
         loading,
         signIn,
         signUp,

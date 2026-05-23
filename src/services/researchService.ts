@@ -11,6 +11,8 @@ export interface ResearchInput {
   careerGoal: string;
   grade: string;
   interestTopic: string;
+  journalSubject: string;
+  additionalContext: string;
 }
 
 export async function getResearchTopics(input: ResearchInput): Promise<ResearchSuggestion[]> {

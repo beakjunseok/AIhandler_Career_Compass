@@ -183,6 +183,30 @@ export const CURRICULUM_2022: SubjectGroup[] = [
   },
 ];
 
+export type SelectionType = "common" | "general" | "career" | "fusion";
+
+export type SubjectEntry = {
+  area: string;
+  name: string;
+  type: SelectionType;
+};
+
+/**
+ * Returns every subject in the 2022 curriculum as a flat list,
+ * preserving area and selection-type metadata. Used to power
+ * client-side single-select dropdowns.
+ */
+export function allSubjects(): SubjectEntry[] {
+  const out: SubjectEntry[] = [];
+  for (const g of CURRICULUM_2022) {
+    g.common?.forEach((name) => out.push({ area: g.area, name, type: "common" }));
+    g.general?.forEach((name) => out.push({ area: g.area, name, type: "general" }));
+    g.career?.forEach((name) => out.push({ area: g.area, name, type: "career" }));
+    g.fusion?.forEach((name) => out.push({ area: g.area, name, type: "fusion" }));
+  }
+  return out;
+}
+
 /**
  * Returns a compact text block describing the entire 2022 curriculum,
  * formatted for inclusion in a Gemini prompt.

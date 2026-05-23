@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Search, GraduationCap, BookOpen, Target, Sparkles, ArrowRight, Loader2,
+  Compass, GraduationCap, BookOpen, Target, Sparkles, ArrowRight, Loader2,
   School, ChevronRight, Lock, LogOut, History, User as UserIcon, X,
-  FileText, Lightbulb, Clipboard, Check,
+  FileText, Lightbulb, Clipboard, Check, Trash2, ListChecks, MapPin, Building2,
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { getRecommendations, type Recommendation } from './services/geminiService';
 import { getResearchTopics, type ResearchSuggestion } from './services/researchService';
 import { useAuth } from './lib/AuthContext';
 import { supabase } from './lib/supabase';
+import { CURRICULUM_2022 } from '../api/curriculum';
+
+const BRAND = 'Career Compass';
 
 type TabKey = 'major' | 'research';
 type HistoryKind = 'major' | 'research';
@@ -19,6 +22,7 @@ type MajorFormData = {
   favoriteSubjects: string;
   careerGoal: string;
   grade: string;
+  currentSubjects: string;
 };
 
 type ResearchFormData = {
@@ -26,6 +30,8 @@ type ResearchFormData = {
   careerGoal: string;
   grade: string;
   interestTopic: string;
+  journalSubject: string;
+  additionalContext: string;
 };
 
 type MajorHistoryRow = {
@@ -46,6 +52,15 @@ type ResearchHistoryRow = {
   user_grade: string;
   interest_topic: string;
   result_json: ResearchSuggestion[];
+};
+
+type UnivItem = {
+  schoolName?: string;
+  schoolType?: string;
+  major?: string;
+  region?: string;
+  totalCount?: string;
+  [k: string]: unknown;
 };
 
 // --- Header ---
@@ -88,9 +103,9 @@ const Header = ({
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="text-white w-5 h-5" />
+            <Compass className="text-white w-5 h-5" />
           </div>
-          <span className="font-bold text-xl tracking-tight text-gray-900">DreamPath</span>
+          <span className="font-bold text-xl tracking-tight text-gray-900">{BRAND}</span>
         </div>
 
         <nav className="hidden md:flex items-center gap-1 bg-gray-100/70 rounded-full p-1">
@@ -176,7 +191,7 @@ const Header = ({
   );
 };
 
-// --- Hero (tab-aware) ---
+// --- Hero ---
 
 const Hero = ({ activeTab }: { activeTab: TabKey }) => (
   <section className="pt-32 pb-16 px-6">
@@ -248,16 +263,17 @@ const LoginCTA = ({ onLogin }: { onLogin: () => void }) => (
 const AuthModal = ({ onClose }: { onClose: () => void }) => {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [grade, setGrade] = useState('1');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!name.trim() || !password) {
-      setError('이름과 비밀번호를 입력해주세요.');
+    if (!username.trim() || !password) {
+      setError('사용자명과 비밀번호를 입력해주세요.');
       return;
     }
     if (mode === 'signup' && password.length < 6) {
@@ -265,12 +281,12 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
       return;
     }
     setSubmitting(true);
-    const { error } = mode === 'login'
-      ? await signIn(name, password)
-      : await signUp(name, password);
+    const result = mode === 'login'
+      ? await signIn(username, password)
+      : await signUp(username, password, grade);
     setSubmitting(false);
-    if (error) {
-      setError(error);
+    if (result.error) {
+      setError(result.error);
       return;
     }
     onClose();
@@ -294,9 +310,9 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
         <div className="p-8 pb-0 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <GraduationCap className="text-white w-5 h-5" />
+              <Compass className="text-white w-5 h-5" />
             </div>
-            <span className="font-bold text-lg text-gray-900">DreamPath</span>
+            <span className="font-bold text-lg text-gray-900">{BRAND}</span>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
             <X className="w-5 h-5 text-gray-400" />
@@ -330,15 +346,15 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
           <form onSubmit={submit} className="space-y-4">
             <div>
               <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-2">
-                <UserIcon className="w-3.5 h-3.5" /> 이름
+                <UserIcon className="w-3.5 h-3.5" /> 사용자명
               </label>
               <input
                 type="text"
                 autoComplete={mode === 'login' ? 'username' : 'off'}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-800"
-                placeholder={mode === 'signup' ? '예: 홍길동' : '본인 이름'}
+                placeholder={mode === 'signup' ? '예: 홍길동' : '사용자명 입력'}
                 maxLength={40}
               />
             </div>
@@ -355,6 +371,31 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
                 placeholder={mode === 'signup' ? '6자 이상' : ''}
               />
             </div>
+
+            {mode === 'signup' && (
+              <div>
+                <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-2">
+                  <GraduationCap className="w-3.5 h-3.5" /> 학년
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['1', '2', '3'].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGrade(g)}
+                      className={cn(
+                        'py-2.5 rounded-xl border text-sm font-bold transition-all',
+                        grade === g
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-200'
+                      )}
+                    >
+                      고{g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
@@ -377,16 +418,16 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
         </div>
 
         <div className="p-8 pt-6 text-center text-xs text-gray-400">
-          이름은 본인 식별용입니다. 같은 이름은 한 번만 가입할 수 있어요.
+          사용자명은 본인 식별용입니다. 같은 사용자명은 한 번만 가입할 수 있어요.
         </div>
       </motion.div>
     </motion.div>
   );
 };
 
-// --- Grade selector (reused) ---
+// --- Grade Selector (shared) ---
 
-const GradeSelector = ({ value, onChange }: { value: string; onChange: (g: string) => void }) => (
+const GradeSelector = ({ value, onChange, accent }: { value: string; onChange: (g: string) => void; accent: 'indigo' | 'emerald' }) => (
   <div className="grid grid-cols-3 gap-3">
     {['1', '2', '3'].map((g) => (
       <button
@@ -396,7 +437,9 @@ const GradeSelector = ({ value, onChange }: { value: string; onChange: (g: strin
         className={cn(
           'py-3 rounded-xl border text-sm font-bold transition-all',
           value === g
-            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
+            ? accent === 'indigo'
+              ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
+              : 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-100'
             : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-200'
         )}
       >
@@ -406,20 +449,50 @@ const GradeSelector = ({ value, onChange }: { value: string; onChange: (g: strin
   </div>
 );
 
+// --- Subject native select grouped by 교과군 ---
+
+const SubjectSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+  <select
+    value={value}
+    onChange={(e) => onChange(e.target.value)}
+    className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-800 appearance-none"
+  >
+    <option value="">과목을 선택하세요…</option>
+    {CURRICULUM_2022.map((g) => {
+      const all = [
+        ...(g.common ?? []),
+        ...(g.general ?? []),
+        ...(g.career ?? []),
+        ...(g.fusion ?? []),
+      ];
+      return (
+        <optgroup key={g.area} label={g.area}>
+          {all.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </optgroup>
+      );
+    })}
+  </select>
+);
+
 // --- Major Recommendation Form ---
 
 const MajorForm = ({
   userId,
+  defaultGrade,
   onRecommend,
 }: {
   userId: string;
+  defaultGrade: string;
   onRecommend: (data: Recommendation[]) => void;
 }) => {
   const [formData, setFormData] = useState<MajorFormData>({
     interests: '',
     favoriteSubjects: '',
     careerGoal: '',
-    grade: '1',
+    grade: defaultGrade,
+    currentSubjects: '',
   });
   const [loading, setLoading] = useState(false);
 
@@ -437,14 +510,14 @@ const MajorForm = ({
         user_subjects: formData.favoriteSubjects,
         user_career_goal: formData.careerGoal,
         user_grade: formData.grade,
-        result_json: results,
+        result_json: { recs: results, currentSubjects: formData.currentSubjects },
       });
       if (error) console.error('Failed to save recommendation:', error);
 
       onRecommend(results);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('추천을 가져오는 중 오류가 발생했습니다.');
+      alert(err.message || '추천을 가져오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -462,7 +535,7 @@ const MajorForm = ({
             <GraduationCap className="w-4 h-4 text-indigo-500" />
             현재 학년이 어떻게 되나요?
           </label>
-          <GradeSelector value={formData.grade} onChange={(g) => setFormData({ ...formData, grade: g })} />
+          <GradeSelector value={formData.grade} accent="indigo" onChange={(g) => setFormData({ ...formData, grade: g })} />
         </div>
 
         <div className="space-y-4">
@@ -490,6 +563,20 @@ const MajorForm = ({
             value={formData.favoriteSubjects}
             onChange={(e) => setFormData({ ...formData, favoriteSubjects: e.target.value })}
           />
+        </div>
+
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <ListChecks className="w-4 h-4 text-indigo-500" />
+            현재 수강(예정) 선택과목 (선택)
+          </label>
+          <textarea
+            placeholder="예: 미적분Ⅰ, 화학, 생명과학, 영어Ⅰ, 사회와 문화"
+            className="w-full px-5 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none resize-none h-20 text-gray-800"
+            value={formData.currentSubjects}
+            onChange={(e) => setFormData({ ...formData, currentSubjects: e.target.value })}
+          />
+          <p className="text-xs text-gray-400">쉼표로 구분하여 입력. 추천 학과의 필요 과목과 비교해드려요.</p>
         </div>
 
         <div className="space-y-4">
@@ -535,16 +622,20 @@ const MajorForm = ({
 
 const ResearchForm = ({
   userId,
+  defaultGrade,
   onResult,
 }: {
   userId: string;
+  defaultGrade: string;
   onResult: (data: ResearchSuggestion[]) => void;
 }) => {
   const [formData, setFormData] = useState<ResearchFormData>({
     targetDepartment: '',
     careerGoal: '',
-    grade: '1',
+    grade: defaultGrade,
     interestTopic: '',
+    journalSubject: '',
+    additionalContext: '',
   });
   const [loading, setLoading] = useState(false);
 
@@ -562,7 +653,7 @@ const ResearchForm = ({
         career_goal: formData.careerGoal,
         user_grade: formData.grade,
         interest_topic: formData.interestTopic,
-        result_json: results,
+        result_json: { topics: results, journalSubject: formData.journalSubject, additionalContext: formData.additionalContext },
       });
       if (error) console.error('Failed to save research suggestion:', error);
 
@@ -587,7 +678,7 @@ const ResearchForm = ({
             <GraduationCap className="w-4 h-4 text-emerald-500" />
             현재 학년
           </label>
-          <GradeSelector value={formData.grade} onChange={(g) => setFormData({ ...formData, grade: g })} />
+          <GradeSelector value={formData.grade} accent="emerald" onChange={(g) => setFormData({ ...formData, grade: g })} />
         </div>
 
         <div className="space-y-4">
@@ -620,14 +711,39 @@ const ResearchForm = ({
 
         <div className="space-y-4">
           <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <BookOpen className="w-4 h-4 text-emerald-500" />
+            생기부를 작성할 과목 (선택)
+          </label>
+          <SubjectSelect
+            value={formData.journalSubject}
+            onChange={(v) => setFormData({ ...formData, journalSubject: v })}
+          />
+          <p className="text-xs text-gray-400">선택하면 모든 주제가 이 과목과 연계되도록 생성돼요.</p>
+        </div>
+
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
             <Lightbulb className="w-4 h-4 text-emerald-500" />
             관심 주제/분야 (선택)
           </label>
           <textarea
             placeholder="예: 생성형 AI 윤리, 청소년 수면과 학업 성취, 도시 재생, 환경 호르몬 등"
-            className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none resize-none h-24 text-gray-800"
+            className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none resize-none h-20 text-gray-800"
             value={formData.interestTopic}
             onChange={(e) => setFormData({ ...formData, interestTopic: e.target.value })}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <Sparkles className="w-4 h-4 text-emerald-500" />
+            연관 짓고 싶은 과목이나 내용 (선택)
+          </label>
+          <textarea
+            placeholder="예: 통합사회에서 배운 사회 정의, 동아리에서 진행한 환경 캠페인, 독서 '코스모스' 등"
+            className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none resize-none h-20 text-gray-800"
+            value={formData.additionalContext}
+            onChange={(e) => setFormData({ ...formData, additionalContext: e.target.value })}
           />
         </div>
 
@@ -664,172 +780,347 @@ interface DepartmentCardProps {
   key?: React.Key;
 }
 
-const DepartmentCard = ({ recommendation, index, onViewDetails }: DepartmentCardProps & { onViewDetails: (rec: Recommendation) => void }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: index * 0.1 }}
-    className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm hover:shadow-xl hover:shadow-indigo-50/50 transition-all group"
-  >
-    <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <School className="w-5 h-5 text-indigo-600" />
-          <span className="text-sm font-bold text-indigo-600 uppercase tracking-wider">{recommendation.schoolName}</span>
-        </div>
-        <h3 className="text-2xl font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">
-          {recommendation.departmentName}
-        </h3>
-      </div>
-      <div className="bg-indigo-50 px-4 py-2 rounded-xl">
-        <span className="text-xs font-bold text-indigo-700">매칭률 98%</span>
-      </div>
-    </div>
-
-    <div className="space-y-6">
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          추천 이유
-        </h4>
-        <p className="text-gray-600 text-sm leading-relaxed">
-          {recommendation.matchReason}
-        </p>
-      </div>
-
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-indigo-500" />
-          주요 커리큘럼
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {recommendation.curriculum.slice(0, 4).map((item, i) => (
-            <span key={i} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-600 font-medium">
-              {item}
-            </span>
-          ))}
-          {recommendation.curriculum.length > 4 && (
-            <span className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-400 font-medium">
-              +{recommendation.curriculum.length - 4}개 더보기
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
-          <Target className="w-4 h-4 text-emerald-500" />
-          졸업 후 진로
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {recommendation.careerPaths.map((path, i) => (
-            <span key={i} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold">
-              {path}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <button
-      onClick={() => onViewDetails(recommendation)}
-      className="w-full mt-8 py-4 border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-indigo-200 transition-all flex items-center justify-center gap-2"
+const DepartmentCard = ({ recommendation, index, onViewDetails }: DepartmentCardProps & { onViewDetails: (rec: Recommendation) => void }) => {
+  const score = typeof recommendation.matchScore === 'number' ? Math.max(0, Math.min(100, Math.round(recommendation.matchScore))) : null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.1 }}
+      className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm hover:shadow-xl hover:shadow-indigo-50/50 transition-all group"
     >
-      상세 커리큘럼 더보기
-      <ChevronRight className="w-4 h-4" />
-    </button>
-  </motion.div>
-);
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <School className="w-5 h-5 text-indigo-600" />
+            <span className="text-sm font-bold text-indigo-600 uppercase tracking-wider">{recommendation.schoolName}</span>
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">
+            {recommendation.departmentName}
+          </h3>
+        </div>
+        {score !== null && (
+          <div className="bg-indigo-50 px-4 py-2 rounded-xl text-center">
+            <div className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">매칭률</div>
+            <div className="text-xl font-bold text-indigo-700 leading-none">{score}%</div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        <div>
+          <h4 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            추천 이유
+          </h4>
+          <p className="text-gray-600 text-sm leading-relaxed">{recommendation.matchReason}</p>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-indigo-500" />
+            주요 커리큘럼
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {recommendation.curriculum.slice(0, 4).map((item, i) => (
+              <span key={i} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-600 font-medium">
+                {item}
+              </span>
+            ))}
+            {recommendation.curriculum.length > 4 && (
+              <span className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-400 font-medium">
+                +{recommendation.curriculum.length - 4}개 더보기
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <Target className="w-4 h-4 text-emerald-500" />
+            졸업 후 진로
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {recommendation.careerPaths.map((path, i) => (
+              <span key={i} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold">
+                {path}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onViewDetails(recommendation)}
+        className="w-full mt-8 py-4 border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-indigo-200 transition-all flex items-center justify-center gap-2"
+      >
+        상세 커리큘럼 더보기
+        <ChevronRight className="w-4 h-4" />
+      </button>
+    </motion.div>
+  );
+};
 
 // --- Curriculum Modal ---
 
-const CurriculumModal = ({ recommendation, onClose, onSearch }: { recommendation: Recommendation; onClose: () => void; onSearch: () => void }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-gray-900/60 backdrop-blur-sm"
-    onClick={onClose}
-  >
+const CurriculumModal = ({
+  recommendation,
+  currentSubjects,
+  onClose,
+  onViewUniversities,
+}: {
+  recommendation: Recommendation;
+  currentSubjects: string;
+  onClose: () => void;
+  onViewUniversities: () => void;
+}) => {
+  const taken = new Set(
+    currentSubjects
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  const needed = recommendation.neededSubjects ?? [];
+
+  return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.9, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.9, y: 20 }}
-      className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
-      onClick={(e) => e.stopPropagation()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-gray-900/60 backdrop-blur-sm"
+      onClick={onClose}
     >
-      <div className="p-8 border-b border-gray-100 flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <School className="w-4 h-4 text-indigo-600" />
-            <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{recommendation.schoolName}</span>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-8 border-b border-gray-100 flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <School className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{recommendation.schoolName}</span>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900">{recommendation.departmentName} 상세 분석</h3>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">{recommendation.departmentName} 상세 분석</h3>
+          <button
+            onClick={onViewUniversities}
+            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 rounded-xl text-xs font-bold text-indigo-700 transition-all"
+            title="이 학과가 있는 대학 보기"
+          >
+            <Building2 className="w-4 h-4" />
+            이 학과가 있는 대학
+          </button>
         </div>
-        <button
-          onClick={onSearch}
-          className="p-2 hover:bg-gray-100 rounded-full transition-colors group"
-          title="상세 검색"
-        >
-          <Search className="w-5 h-5 text-gray-400 rotate-12 group-hover:text-indigo-600 transition-all" />
-        </button>
-      </div>
 
-      <div className="p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
-        <div className="space-y-8">
-          <section className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
-            <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-900 mb-3">
-              <Sparkles className="w-4 h-4 text-indigo-500" />
-              학년별 생기부 맞춤 조언
-            </h4>
-            <p className="text-sm text-indigo-800 leading-relaxed whitespace-pre-wrap">
-              {recommendation.gradeSpecificAdvice}
-            </p>
-          </section>
+        <div className="p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          <div className="space-y-8">
+            {needed.length > 0 && (
+              <section>
+                <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4">
+                  <ListChecks className="w-4 h-4 text-indigo-500" />
+                  이 학과를 위해 필요한 선택과목
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {needed.map((s, i) => {
+                    const ok = taken.has(s);
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          'flex items-center gap-2 p-3 rounded-xl border',
+                          ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'
+                        )}
+                      >
+                        {ok ? <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <X className="w-4 h-4 text-amber-600 flex-shrink-0" />}
+                        <span className={cn('text-sm font-medium', ok ? 'text-emerald-800' : 'text-amber-800')}>{s}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {taken.size > 0 && (
+                  <p className="text-xs text-gray-400 mt-3">
+                    ✓ 이미 수강(예정) · ✗ 추가 수강 권장 · 입력한 과목 {taken.size}개 기준
+                  </p>
+                )}
+              </section>
+            )}
 
-          <section>
-            <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4">
-              <BookOpen className="w-4 h-4 text-indigo-500" />
-              전공 필수 및 선택 과목
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {recommendation.curriculum.map((item, i) => (
-                <div key={i} className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                  <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[10px] font-bold text-indigo-600 shadow-sm">
-                    {i + 1}
+            <section className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
+              <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-900 mb-3">
+                <Sparkles className="w-4 h-4 text-indigo-500" />
+                학년별 생기부 맞춤 조언
+              </h4>
+              <p className="text-sm text-indigo-800 leading-relaxed whitespace-pre-wrap">
+                {recommendation.gradeSpecificAdvice}
+              </p>
+            </section>
+
+            <section>
+              <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4">
+                <BookOpen className="w-4 h-4 text-indigo-500" />
+                전공 관련 추천 이수 과목
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {recommendation.curriculum.map((item, i) => (
+                  <div key={i} className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[10px] font-bold text-indigo-600 shadow-sm">
+                      {i + 1}
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">{item}</span>
                   </div>
-                  <span className="text-sm font-medium text-gray-700">{item}</span>
+                ))}
+              </div>
+            </section>
+
+            <section className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
+              <h4 className="text-sm font-bold text-gray-900 mb-3">학과 소개</h4>
+              <p className="text-sm text-gray-600 leading-relaxed">{recommendation.description}</p>
+            </section>
+          </div>
+        </div>
+
+        <div className="p-8 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-8 py-3 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-all"
+          >
+            확인
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// --- Dept Universities Modal ---
+
+const DeptUnivListModal = ({ department, onClose }: { department: string; onClose: () => void }) => {
+  const [items, setItems] = useState<UnivItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/careernet/majors?search=${encodeURIComponent(department)}`);
+        if (!res.ok) throw new Error(`커리어넷 API 호출 실패 (${res.status})`);
+        const json = await res.json();
+        if (cancelled) return;
+        setItems((json?.dataSearch?.content ?? []) as UnivItem[]);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || '데이터를 가져오지 못했습니다.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [department]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-indigo-900/40 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-7 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Building2 className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">전국 대학</span>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900">{department} 운영 대학</h3>
+            <p className="text-xs text-gray-400 mt-1">출처: 커리어넷 학과 정보</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {error && (
+            <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          {!items && !error && (
+            <div className="flex items-center justify-center py-16 text-gray-400">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
+          )}
+          {items && items.length === 0 && (
+            <div className="text-center py-16 text-sm text-gray-400">
+              검색 결과가 없습니다.
+            </div>
+          )}
+          {items && items.length > 0 && (
+            <div className="space-y-2">
+              {items.map((u, i) => (
+                <div key={i} className="p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 rounded-xl transition-all">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900 text-sm mb-1">
+                        {String(u.schoolName ?? '학교명 미상')}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {String(u.major ?? department)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 text-xs">
+                      {u.schoolType && (
+                        <span className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600 font-medium">
+                          {String(u.schoolType)}
+                        </span>
+                      )}
+                      {u.region && (
+                        <span className="flex items-center gap-1 text-gray-400">
+                          <MapPin className="w-3 h-3" />
+                          {String(u.region)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-          </section>
-
-          <section className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
-            <h4 className="text-sm font-bold text-gray-900 mb-3">학과 소개</h4>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              {recommendation.description}
-            </p>
-          </section>
+          )}
         </div>
-      </div>
 
-      <div className="p-8 bg-gray-50 border-t border-gray-100 flex justify-end">
-        <button
-          onClick={onClose}
-          className="px-8 py-3 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-all"
-        >
-          확인
-        </button>
-      </div>
+        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-all"
+          >
+            닫기
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
-  </motion.div>
-);
+  );
+};
 
 // --- Major Result List ---
 
-const MajorResultList = ({ recommendations, onReset }: { recommendations: Recommendation[]; onReset: () => void }) => {
+const MajorResultList = ({
+  recommendations,
+  currentSubjects,
+  onReset,
+}: {
+  recommendations: Recommendation[];
+  currentSubjects: string;
+  onReset: () => void;
+}) => {
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
-  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showUnivModal, setShowUnivModal] = useState(false);
 
   return (
     <div className="max-w-5xl mx-auto px-6 pb-24">
@@ -849,56 +1140,16 @@ const MajorResultList = ({ recommendations, onReset }: { recommendations: Recomm
         {selectedRec && (
           <CurriculumModal
             recommendation={selectedRec}
+            currentSubjects={currentSubjects}
             onClose={() => setSelectedRec(null)}
-            onSearch={() => setShowSearchModal(true)}
+            onViewUniversities={() => setShowUnivModal(true)}
           />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {showSearchModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-indigo-900/40 backdrop-blur-md"
-            onClick={() => setShowSearchModal(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-10 text-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Search className="w-10 h-10 text-indigo-600 rotate-12" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">상세 정보 검색</h3>
-              <p className="text-gray-600 mb-8 leading-relaxed">
-                해당 학과의 입결 정보, 경쟁률, 장학금 혜택 등 <br />
-                더 자세한 정보를 외부 포털에서 검색하시겠습니까?
-              </p>
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={() => {
-                    const query = `${selectedRec?.schoolName} ${selectedRec?.departmentName} 입결 경쟁률`;
-                    window.open(`https://search.naver.com/search.naver?query=${encodeURIComponent(query)}`, '_blank');
-                    setShowSearchModal(false);
-                  }}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
-                >
-                  네이버에서 검색하기
-                </button>
-                <button
-                  onClick={() => setShowSearchModal(false)}
-                  className="w-full py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all"
-                >
-                  닫기
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
+        {showUnivModal && selectedRec && (
+          <DeptUnivListModal department={selectedRec.departmentName} onClose={() => setShowUnivModal(false)} />
         )}
       </AnimatePresence>
     </div>
@@ -944,9 +1195,7 @@ const ResearchTopicCard = ({
       </div>
     </div>
 
-    <p className="text-sm text-gray-600 leading-relaxed line-clamp-3 mb-5">
-      {topic.motivation}
-    </p>
+    <p className="text-sm text-gray-600 leading-relaxed line-clamp-3 mb-5">{topic.motivation}</p>
 
     <button
       onClick={() => onViewDetails(topic)}
@@ -965,9 +1214,7 @@ const ResearchDetailModal = ({ topic, onClose }: { topic: ResearchSuggestion; on
       await navigator.clipboard.writeText(topic.journalText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   return (
@@ -1007,9 +1254,7 @@ const ResearchDetailModal = ({ topic, onClose }: { topic: ResearchSuggestion; on
                 <Sparkles className="w-4 h-4 text-amber-500" />
                 탐구 동기
               </h4>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {topic.motivation}
-              </p>
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{topic.motivation}</p>
             </section>
 
             <section>
@@ -1048,9 +1293,7 @@ const ResearchDetailModal = ({ topic, onClose }: { topic: ResearchSuggestion; on
                   {copied ? '복사됨' : '복사'}
                 </button>
               </div>
-              <p className="text-sm text-emerald-900 leading-relaxed whitespace-pre-wrap">
-                {topic.journalText}
-              </p>
+              <p className="text-sm text-emerald-900 leading-relaxed whitespace-pre-wrap">{topic.journalText}</p>
             </section>
           </div>
         </div>
@@ -1092,6 +1335,29 @@ const ResearchResultList = ({ topics, onReset }: { topics: ResearchSuggestion[];
   );
 };
 
+// --- Helper: extract recommendations/topics from stored result_json (may be array or object wrapping) ---
+
+function extractMajorResults(rj: unknown): { recs: Recommendation[]; currentSubjects: string } {
+  if (Array.isArray(rj)) return { recs: rj as Recommendation[], currentSubjects: '' };
+  if (rj && typeof rj === 'object' && 'recs' in rj) {
+    const o = rj as { recs?: unknown; currentSubjects?: unknown };
+    return {
+      recs: Array.isArray(o.recs) ? (o.recs as Recommendation[]) : [],
+      currentSubjects: typeof o.currentSubjects === 'string' ? o.currentSubjects : '',
+    };
+  }
+  return { recs: [], currentSubjects: '' };
+}
+
+function extractResearchResults(rj: unknown): ResearchSuggestion[] {
+  if (Array.isArray(rj)) return rj as ResearchSuggestion[];
+  if (rj && typeof rj === 'object' && 'topics' in rj) {
+    const o = rj as { topics?: unknown };
+    return Array.isArray(o.topics) ? (o.topics as ResearchSuggestion[]) : [];
+  }
+  return [];
+}
+
 // --- History Side Panel ---
 
 const HistoryPanel = ({
@@ -1102,13 +1368,14 @@ const HistoryPanel = ({
 }: {
   kind: HistoryKind;
   onClose: () => void;
-  onSelectMajor: (results: Recommendation[]) => void;
+  onSelectMajor: (results: Recommendation[], currentSubjects: string) => void;
   onSelectResearch: (results: ResearchSuggestion[]) => void;
 }) => {
   const { user } = useAuth();
   const [majorRows, setMajorRows] = useState<MajorHistoryRow[] | null>(null);
   const [researchRows, setResearchRows] = useState<ResearchHistoryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -1145,6 +1412,20 @@ const HistoryPanel = ({
 
     return () => { cancelled = true; };
   }, [user, kind]);
+
+  const deleteRow = async (id: string) => {
+    if (!confirm('이 이력을 삭제할까요?')) return;
+    setDeletingId(id);
+    const table = kind === 'major' ? 'recommendations' : 'research_suggestions';
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    setDeletingId(null);
+    if (error) {
+      alert(`삭제 실패: ${error.message}`);
+      return;
+    }
+    if (kind === 'major') setMajorRows((rows) => rows?.filter((r) => r.id !== id) ?? null);
+    else setResearchRows((rows) => rows?.filter((r) => r.id !== id) ?? null);
+  };
 
   const isMajor = kind === 'major';
   const rows = isMajor ? majorRows : researchRows;
@@ -1197,46 +1478,64 @@ const HistoryPanel = ({
           {isMajor && majorRows?.map((row) => {
             const date = new Date(row.created_at);
             const dateStr = `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
-            const count = Array.isArray(row.result_json) ? row.result_json.length : 0;
+            const { recs, currentSubjects } = extractMajorResults(row.result_json);
             return (
-              <button
-                key={row.id}
-                onClick={() => Array.isArray(row.result_json) && onSelectMajor(row.result_json)}
-                className="w-full text-left p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-2xl transition-all"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-indigo-600">고등학교 {row.user_grade}학년</span>
-                  <span className="text-xs text-gray-400">{dateStr}</span>
-                </div>
-                <p className="text-sm font-bold text-gray-900 mb-1 truncate">{row.user_career_goal}</p>
-                <p className="text-xs text-gray-500 truncate mb-2">
-                  {row.user_subjects} · {row.user_interests}
-                </p>
-                <span className="text-xs text-gray-400">추천 학과 {count}개</span>
-              </button>
+              <div key={row.id} className="relative group">
+                <button
+                  onClick={() => recs.length > 0 && onSelectMajor(recs, currentSubjects)}
+                  className="w-full text-left p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-2xl transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-indigo-600">고등학교 {row.user_grade}학년</span>
+                    <span className="text-xs text-gray-400 mr-7">{dateStr}</span>
+                  </div>
+                  <p className="text-sm font-bold text-gray-900 mb-1 truncate">{row.user_career_goal}</p>
+                  <p className="text-xs text-gray-500 truncate mb-2">
+                    {row.user_subjects} · {row.user_interests}
+                  </p>
+                  <span className="text-xs text-gray-400">추천 학과 {recs.length}개</span>
+                </button>
+                <button
+                  onClick={() => deleteRow(row.id)}
+                  disabled={deletingId === row.id}
+                  className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  title="이력 삭제"
+                >
+                  {deletingId === row.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              </div>
             );
           })}
 
           {!isMajor && researchRows?.map((row) => {
             const date = new Date(row.created_at);
             const dateStr = `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
-            const count = Array.isArray(row.result_json) ? row.result_json.length : 0;
+            const topics = extractResearchResults(row.result_json);
             return (
-              <button
-                key={row.id}
-                onClick={() => Array.isArray(row.result_json) && onSelectResearch(row.result_json)}
-                className="w-full text-left p-4 bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 rounded-2xl transition-all"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-emerald-600">고등학교 {row.user_grade}학년</span>
-                  <span className="text-xs text-gray-400">{dateStr}</span>
-                </div>
-                <p className="text-sm font-bold text-gray-900 mb-1 truncate">{row.target_department}</p>
-                <p className="text-xs text-gray-500 truncate mb-2">
-                  {row.interest_topic || row.career_goal || '관심 주제 미입력'}
-                </p>
-                <span className="text-xs text-gray-400">탐구 주제 {count}개</span>
-              </button>
+              <div key={row.id} className="relative group">
+                <button
+                  onClick={() => topics.length > 0 && onSelectResearch(topics)}
+                  className="w-full text-left p-4 bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 rounded-2xl transition-all"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-emerald-600">고등학교 {row.user_grade}학년</span>
+                    <span className="text-xs text-gray-400 mr-7">{dateStr}</span>
+                  </div>
+                  <p className="text-sm font-bold text-gray-900 mb-1 truncate">{row.target_department}</p>
+                  <p className="text-xs text-gray-500 truncate mb-2">
+                    {row.interest_topic || row.career_goal || '관심 주제 미입력'}
+                  </p>
+                  <span className="text-xs text-gray-400">탐구 주제 {topics.length}개</span>
+                </button>
+                <button
+                  onClick={() => deleteRow(row.id)}
+                  disabled={deletingId === row.id}
+                  className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  title="이력 삭제"
+                >
+                  {deletingId === row.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              </div>
             );
           })}
         </div>
@@ -1248,14 +1547,16 @@ const HistoryPanel = ({
 // --- App ---
 
 export default function App() {
-  const { user, loading, signOut } = useAuth();
+  const { user, displayGrade, loading, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('major');
   const [majorResults, setMajorResults] = useState<Recommendation[] | null>(null);
+  const [majorCurrentSubjects, setMajorCurrentSubjects] = useState<string>('');
   const [researchResults, setResearchResults] = useState<ResearchSuggestion[] | null>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [historyKind, setHistoryKind] = useState<HistoryKind | null>(null);
 
   const hasResultForTab = activeTab === 'major' ? !!majorResults : !!researchResults;
+  const effectiveGrade = displayGrade ?? '1';
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] font-sans selection:bg-indigo-100 selection:text-indigo-900">
@@ -1268,6 +1569,7 @@ export default function App() {
           await signOut();
           setMajorResults(null);
           setResearchResults(null);
+          setMajorCurrentSubjects('');
         }}
       />
 
@@ -1290,9 +1592,17 @@ export default function App() {
                 ) : !user ? (
                   <LoginCTA onLogin={() => setShowAuth(true)} />
                 ) : activeTab === 'major' ? (
-                  <MajorForm userId={user.id} onRecommend={setMajorResults} />
+                  <MajorForm
+                    userId={user.id}
+                    defaultGrade={effectiveGrade}
+                    onRecommend={(r) => setMajorResults(r)}
+                  />
                 ) : (
-                  <ResearchForm userId={user.id} onResult={setResearchResults} />
+                  <ResearchForm
+                    userId={user.id}
+                    defaultGrade={effectiveGrade}
+                    onResult={setResearchResults}
+                  />
                 )}
               </div>
             </motion.div>
@@ -1306,7 +1616,11 @@ export default function App() {
               className="pt-32"
             >
               {activeTab === 'major' && majorResults && (
-                <MajorResultList recommendations={majorResults} onReset={() => setMajorResults(null)} />
+                <MajorResultList
+                  recommendations={majorResults}
+                  currentSubjects={majorCurrentSubjects}
+                  onReset={() => setMajorResults(null)}
+                />
               )}
               {activeTab === 'research' && researchResults && (
                 <ResearchResultList topics={researchResults} onReset={() => setResearchResults(null)} />
@@ -1325,9 +1639,10 @@ export default function App() {
           <HistoryPanel
             kind={historyKind}
             onClose={() => setHistoryKind(null)}
-            onSelectMajor={(r) => {
+            onSelectMajor={(r, cs) => {
               setActiveTab('major');
               setMajorResults(r);
+              setMajorCurrentSubjects(cs);
               setHistoryKind(null);
             }}
             onSelectResearch={(r) => {
@@ -1342,14 +1657,10 @@ export default function App() {
       <footer className="py-12 border-t border-gray-100 bg-white">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-2 opacity-50">
-            <GraduationCap className="w-5 h-5" />
-            <span className="font-bold text-lg">DreamPath</span>
+            <Compass className="w-5 h-5" />
+            <span className="font-bold text-lg">{BRAND}</span>
           </div>
-          <p className="text-sm text-gray-400">© 2026 DreamPath AI. All rights reserved.</p>
-          <div className="flex gap-6">
-            <a href="#" className="text-sm text-gray-400 hover:text-indigo-600 transition-colors">이용약관</a>
-            <a href="#" className="text-sm text-gray-400 hover:text-indigo-600 transition-colors">개인정보처리방침</a>
-          </div>
+          <p className="text-sm text-gray-400">© 2026 {BRAND}. All rights reserved.</p>
         </div>
       </footer>
     </div>
