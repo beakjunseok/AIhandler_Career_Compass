@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { curriculumPromptBlock } from "./api/curriculum";
 
 dotenv.config();
 
@@ -76,18 +77,27 @@ app.post("/api/recommend", async (req, res) => {
     // 3. Final recommendation using Gemini
     const finalPrompt = `
       당신은 고등학생을 위한 진로 및 진학 상담 전문가입니다.
-      학생의 정보와 실제 학과 데이터를 바탕으로 가장 적합한 대학 학과 5곳을 추천해주세요.
-      
+      학생의 정보, 실제 학과 데이터, 그리고 2022 개정 교육과정 고등학교 과목 목록을 바탕으로
+      가장 적합한 대학 학과 5곳을 추천해주세요.
+
       학생 정보:
       - 학년: ${userInput.grade}
       - 취향/관심사: ${userInput.interests}
       - 좋아하는 과목: ${userInput.favoriteSubjects}
       - 장래희망: ${userInput.careerGoal}
-      
+
       참고할 실제 학과 데이터 (커리어넷 검색 결과):
       ${JSON.stringify(apiData.slice(0, 10))}
-      
-      반환 형식은 JSON 배열이어야 하며 각 객체는 다음 필드를 포함해야 합니다: schoolName, departmentName, description, curriculum(배열), matchReason, careerPaths(배열), gradeSpecificAdvice.
+
+      ${curriculumPromptBlock()}
+
+      ## 작성 규칙 (엄격히 준수)
+      1. curriculum 필드의 각 항목은 반드시 위 "2022 개정 교육과정 과목 목록"에 명시된 정확한 과목명만 사용. 임의 과목명 생성 금지.
+      2. curriculum은 해당 학과 진학에 직접 도움이 되는 7~10개 과목으로 선정. 공통/일반선택 위주로 1~2학년 이수 가능 과목을 먼저, 진로선택/융합선택을 그 다음에 배치.
+      3. gradeSpecificAdvice는 학생의 현재 학년(${userInput.grade}학년)을 기준으로 구체적인 과목 이수 전략과 생활기록부 작성 방향을 한 문단으로 작성. 학년이 높을수록 진로선택/융합선택 비중을 높일 것.
+      4. matchReason은 학생의 관심사·과목·장래희망과 학과 특성의 연결점을 명시.
+
+      반환 형식: JSON 배열. 각 객체 필드 — schoolName, departmentName, description, curriculum(string[]), matchReason, careerPaths(string[]), gradeSpecificAdvice.
     `;
 
     const finalResult = await ai.models.generateContent({
