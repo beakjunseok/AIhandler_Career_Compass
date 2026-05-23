@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { curriculumPromptBlock } from "./curriculum";
+import { curriculumPromptBlock } from "./curriculum.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS 설정

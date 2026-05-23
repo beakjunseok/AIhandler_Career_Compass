@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { curriculumPromptBlock } from "./api/curriculum";
+import { curriculumPromptBlock } from "./api/curriculum.js";
 
 dotenv.config();
 
