@@ -1,34 +1,130 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, GraduationCap, BookOpen, Target, Sparkles, ArrowRight, Loader2, School, MapPin, ChevronRight } from 'lucide-react';
+import {
+  Search, GraduationCap, BookOpen, Target, Sparkles, ArrowRight, Loader2,
+  School, ChevronRight, Mail, Lock, LogOut, History, User as UserIcon, X,
+} from 'lucide-react';
 import { cn } from './lib/utils';
 import { getRecommendations, type Recommendation } from './services/geminiService';
+import { useAuth } from './lib/AuthContext';
+import { supabase } from './lib/supabase';
 
-// --- Components ---
+type FormData = {
+  interests: string;
+  favoriteSubjects: string;
+  careerGoal: string;
+  grade: string;
+};
 
-const Header = ({ onStart }: { onStart: () => void }) => (
-  <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-bottom border-gray-100">
-    <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-          <GraduationCap className="text-white w-5 h-5" />
+type HistoryRow = {
+  id: string;
+  created_at: string;
+  user_interests: string;
+  user_subjects: string;
+  user_career_goal: string;
+  user_grade: string;
+  result_json: Recommendation[];
+};
+
+// --- Header ---
+
+const Header = ({
+  onLoginClick,
+  onHistoryClick,
+  onSignOut,
+}: {
+  onLoginClick: () => void;
+  onHistoryClick: () => void;
+  onSignOut: () => void;
+}) => {
+  const { user } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [menuOpen]);
+
+  return (
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+            <GraduationCap className="text-white w-5 h-5" />
+          </div>
+          <span className="font-bold text-xl tracking-tight text-gray-900">DreamPath</span>
         </div>
-        <span className="font-bold text-xl tracking-tight text-gray-900">DreamPath</span>
+        <nav className="hidden md:flex items-center gap-8">
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">서비스 소개</a>
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">학과 탐색</a>
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">상담 후기</a>
+        </nav>
+        {user ? (
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 transition-colors px-3 py-2 rounded-full"
+              title={user.email ?? '계정'}
+            >
+              <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center">
+                <UserIcon className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="text-sm font-medium text-gray-700 hidden sm:block max-w-[140px] truncate">
+                {user.email}
+              </span>
+            </button>
+            <AnimatePresence>
+              {menuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"
+                >
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-xs text-gray-400">로그인됨</p>
+                    <p className="text-sm font-medium text-gray-800 truncate">{user.email}</p>
+                  </div>
+                  <button
+                    onClick={() => { setMenuOpen(false); onHistoryClick(); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <History className="w-4 h-4 text-indigo-500" />
+                    내 추천 이력
+                  </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); onSignOut(); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 border-t border-gray-100"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    로그아웃
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ) : (
+          <button
+            onClick={onLoginClick}
+            className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-800 transition-all"
+          >
+            로그인 / 회원가입
+          </button>
+        )}
       </div>
-      <nav className="hidden md:flex items-center gap-8">
-        <a href="#" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">서비스 소개</a>
-        <a href="#" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">학과 탐색</a>
-        <a href="#" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">상담 후기</a>
-      </nav>
-      <button 
-        onClick={onStart}
-        className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-800 transition-all"
-      >
-        시작하기
-      </button>
-    </div>
-  </header>
-);
+    </header>
+  );
+};
+
+// --- Hero ---
 
 const Hero = () => (
   <section className="pt-32 pb-16 px-6">
@@ -46,7 +142,7 @@ const Hero = () => (
           <span className="text-indigo-600">최적의 학과</span>를 찾아보세요
         </h1>
         <p className="text-lg text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed">
-          좋아하는 것, 잘하는 과목, 그리고 꿈꾸는 미래를 알려주세요. 
+          좋아하는 것, 잘하는 과목, 그리고 꿈꾸는 미래를 알려주세요.
           Gemini AI가 전국 대학의 커리큘럼을 분석하여 당신에게 딱 맞는 길을 제안합니다.
         </p>
       </motion.div>
@@ -54,24 +150,222 @@ const Hero = () => (
   </section>
 );
 
-const RecommendationForm = ({ onRecommend }: { onRecommend: (data: any) => void }) => {
-  const [formData, setFormData] = useState({
+// --- Login CTA (shown when logged out) ---
+
+const LoginCTA = ({ onLogin }: { onLogin: () => void }) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    className="max-w-2xl mx-auto bg-white rounded-3xl shadow-xl shadow-indigo-100/50 border border-indigo-50 p-10 text-center"
+  >
+    <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+      <Lock className="w-8 h-8 text-indigo-600" />
+    </div>
+    <h3 className="text-2xl font-bold text-gray-900 mb-3">로그인하고 시작하기</h3>
+    <p className="text-gray-600 mb-8 leading-relaxed">
+      추천 결과는 본인 계정에 저장되어 언제든 다시 확인할 수 있어요.
+    </p>
+    <button
+      onClick={onLogin}
+      className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
+    >
+      로그인하고 추천받기
+      <ArrowRight className="w-5 h-5" />
+    </button>
+  </motion.div>
+);
+
+// --- Auth Modal ---
+
+const AuthModal = ({ onClose }: { onClose: () => void }) => {
+  const { signIn, signUp } = useAuth();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    if (!email || !password) {
+      setError('이메일과 비밀번호를 입력해주세요.');
+      return;
+    }
+    if (mode === 'signup' && password.length < 6) {
+      setError('비밀번호는 6자 이상이어야 합니다.');
+      return;
+    }
+    setSubmitting(true);
+    const { error } = mode === 'login'
+      ? await signIn(email, password)
+      : await signUp(email, password);
+    setSubmitting(false);
+    if (error) {
+      setError(error);
+      return;
+    }
+    if (mode === 'signup') {
+      setInfo('가입 완료. 이메일 인증이 필요하면 메일함을 확인해주세요. 인증이 꺼져 있다면 바로 로그인됩니다.');
+    } else {
+      onClose();
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-indigo-900/40 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-8 pb-0 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <GraduationCap className="text-white w-5 h-5" />
+            </div>
+            <span className="font-bold text-lg text-gray-900">DreamPath</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="px-8 pt-6">
+          <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
+            <button
+              type="button"
+              onClick={() => { setMode('login'); setError(null); setInfo(null); }}
+              className={cn(
+                'flex-1 py-2 text-sm font-bold rounded-lg transition-all',
+                mode === 'login' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
+              )}
+            >
+              로그인
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
+              className={cn(
+                'flex-1 py-2 text-sm font-bold rounded-lg transition-all',
+                mode === 'signup' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
+              )}
+            >
+              회원가입
+            </button>
+          </div>
+
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-2">
+                <Mail className="w-3.5 h-3.5" /> 이메일
+              </label>
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-800"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-2">
+                <Lock className="w-3.5 h-3.5" /> 비밀번호
+              </label>
+              <input
+                type="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-800"
+                placeholder={mode === 'signup' ? '6자 이상' : ''}
+              />
+            </div>
+
+            {error && (
+              <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+                {error}
+              </div>
+            )}
+            {info && (
+              <div className="px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm text-indigo-700">
+                {info}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className={cn(
+                'w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2',
+                submitting && 'opacity-70 cursor-not-allowed'
+              )}
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {mode === 'login' ? '로그인' : '회원가입'}
+            </button>
+          </form>
+        </div>
+
+        <div className="p-8 pt-6 text-center text-xs text-gray-400">
+          가입 시 이메일·비밀번호는 Supabase Auth에 안전하게 저장됩니다.
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// --- Recommendation Form ---
+
+const RecommendationForm = ({
+  userId,
+  onRecommend,
+}: {
+  userId: string;
+  onRecommend: (data: Recommendation[]) => void;
+}) => {
+  const [formData, setFormData] = useState<FormData>({
     interests: '',
     favoriteSubjects: '',
     careerGoal: '',
-    grade: '1'
+    grade: '1',
   });
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.interests || !formData.favoriteSubjects || !formData.careerGoal) return;
-    
+
     setLoading(true);
     try {
       const results = await getRecommendations(formData);
+
+      const { error } = await supabase.from('recommendations').insert({
+        user_id: userId,
+        user_interests: formData.interests,
+        user_subjects: formData.favoriteSubjects,
+        user_career_goal: formData.careerGoal,
+        user_grade: formData.grade,
+        result_json: results,
+      });
+      if (error) {
+        console.error('Failed to save recommendation:', error);
+      }
+
       onRecommend(results);
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       alert('추천을 가져오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
@@ -97,10 +391,10 @@ const RecommendationForm = ({ onRecommend }: { onRecommend: (data: any) => void 
                 type="button"
                 onClick={() => setFormData({ ...formData, grade: g })}
                 className={cn(
-                  "py-3 rounded-xl border text-sm font-bold transition-all",
-                  formData.grade === g 
-                    ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100" 
-                    : "bg-white border-gray-200 text-gray-600 hover:border-indigo-200"
+                  'py-3 rounded-xl border text-sm font-bold transition-all',
+                  formData.grade === g
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100'
+                    : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-200'
                 )}
               >
                 고등학교 {g}학년
@@ -154,8 +448,8 @@ const RecommendationForm = ({ onRecommend }: { onRecommend: (data: any) => void 
           type="submit"
           disabled={loading}
           className={cn(
-            "w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3",
-            loading && "opacity-80 cursor-not-allowed"
+            'w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3',
+            loading && 'opacity-80 cursor-not-allowed'
           )}
         >
           {loading ? (
@@ -174,6 +468,8 @@ const RecommendationForm = ({ onRecommend }: { onRecommend: (data: any) => void 
     </motion.div>
   );
 };
+
+// --- Department Card ---
 
 interface DepartmentCardProps {
   recommendation: Recommendation;
@@ -249,7 +545,7 @@ const DepartmentCard = ({ recommendation, index, onViewDetails }: DepartmentCard
         </div>
       </div>
 
-      <button 
+      <button
         onClick={() => onViewDetails(recommendation)}
         className="w-full mt-8 py-4 border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-indigo-200 transition-all flex items-center justify-center gap-2"
       >
@@ -259,6 +555,8 @@ const DepartmentCard = ({ recommendation, index, onViewDetails }: DepartmentCard
     </motion.div>
   );
 };
+
+// --- Curriculum Modal ---
 
 const CurriculumModal = ({ recommendation, onClose, onSearch }: { recommendation: Recommendation; onClose: () => void; onSearch: () => void }) => {
   return (
@@ -284,7 +582,7 @@ const CurriculumModal = ({ recommendation, onClose, onSearch }: { recommendation
             </div>
             <h3 className="text-2xl font-bold text-gray-900">{recommendation.departmentName} 상세 분석</h3>
           </div>
-          <button 
+          <button
             onClick={onSearch}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors group"
             title="상세 검색"
@@ -332,7 +630,7 @@ const CurriculumModal = ({ recommendation, onClose, onSearch }: { recommendation
         </div>
 
         <div className="p-8 bg-gray-50 border-t border-gray-100 flex justify-end">
-          <button 
+          <button
             onClick={onClose}
             className="px-8 py-3 bg-gray-900 text-white rounded-xl text-sm font-bold hover:bg-gray-800 transition-all"
           >
@@ -344,6 +642,8 @@ const CurriculumModal = ({ recommendation, onClose, onSearch }: { recommendation
   );
 };
 
+// --- Result List ---
+
 const ResultList = ({ recommendations, onReset }: { recommendations: Recommendation[]; onReset: () => void }) => {
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -352,7 +652,7 @@ const ResultList = ({ recommendations, onReset }: { recommendations: Recommendat
     <div className="max-w-5xl mx-auto px-6 pb-24">
       <div className="flex items-center justify-between mb-12">
         <h2 className="text-3xl font-bold text-gray-900">당신을 위한 추천 학과</h2>
-        <button 
+        <button
           onClick={onReset}
           className="text-sm font-bold text-indigo-600 hover:underline"
         >
@@ -361,10 +661,10 @@ const ResultList = ({ recommendations, onReset }: { recommendations: Recommendat
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {recommendations.map((rec, i) => (
-          <DepartmentCard 
-            key={i} 
-            recommendation={rec} 
-            index={i} 
+          <DepartmentCard
+            key={i}
+            recommendation={rec}
+            index={i}
             onViewDetails={setSelectedRec}
           />
         ))}
@@ -372,9 +672,9 @@ const ResultList = ({ recommendations, onReset }: { recommendations: Recommendat
 
       <AnimatePresence>
         {selectedRec && (
-          <CurriculumModal 
-            recommendation={selectedRec} 
-            onClose={() => setSelectedRec(null)} 
+          <CurriculumModal
+            recommendation={selectedRec}
+            onClose={() => setSelectedRec(null)}
             onSearch={() => setShowSearchModal(true)}
           />
         )}
@@ -405,7 +705,7 @@ const ResultList = ({ recommendations, onReset }: { recommendations: Recommendat
                 더 자세한 정보를 외부 포털에서 검색하시겠습니까?
               </p>
               <div className="flex flex-col gap-3">
-                <button 
+                <button
                   onClick={() => {
                     const query = `${selectedRec?.schoolName} ${selectedRec?.departmentName} 입결 경쟁률`;
                     window.open(`https://search.naver.com/search.naver?query=${encodeURIComponent(query)}`, '_blank');
@@ -415,7 +715,7 @@ const ResultList = ({ recommendations, onReset }: { recommendations: Recommendat
                 >
                   네이버에서 검색하기
                 </button>
-                <button 
+                <button
                   onClick={() => setShowSearchModal(false)}
                   className="w-full py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all"
                 >
@@ -430,14 +730,134 @@ const ResultList = ({ recommendations, onReset }: { recommendations: Recommendat
   );
 };
 
+// --- History Side Panel ---
+
+const HistoryPanel = ({
+  onClose,
+  onSelect,
+}: {
+  onClose: () => void;
+  onSelect: (results: Recommendation[]) => void;
+}) => {
+  const { user } = useAuth();
+  const [rows, setRows] = useState<HistoryRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('recommendations')
+        .select('id, created_at, user_interests, user_subjects, user_career_goal, user_grade, result_json')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (cancelled) return;
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      setRows((data ?? []) as HistoryRow[]);
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[115] bg-gray-900/40 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.aside
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+        className="absolute top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-lg font-bold text-gray-900">내 추천 이력</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+          {error && (
+            <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          {!rows && !error && (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
+          )}
+          {rows && rows.length === 0 && (
+            <div className="text-center py-12 text-sm text-gray-400">
+              아직 추천 이력이 없어요.<br />첫 추천을 받아보세요!
+            </div>
+          )}
+          {rows?.map((row) => {
+            const date = new Date(row.created_at);
+            const dateStr = `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+            const count = Array.isArray(row.result_json) ? row.result_json.length : 0;
+            return (
+              <button
+                key={row.id}
+                onClick={() => {
+                  if (Array.isArray(row.result_json)) {
+                    onSelect(row.result_json);
+                  }
+                }}
+                className="w-full text-left p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-2xl transition-all"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-indigo-600">고등학교 {row.user_grade}학년</span>
+                  <span className="text-xs text-gray-400">{dateStr}</span>
+                </div>
+                <p className="text-sm font-bold text-gray-900 mb-1 truncate">
+                  {row.user_career_goal}
+                </p>
+                <p className="text-xs text-gray-500 truncate mb-2">
+                  {row.user_subjects} · {row.user_interests}
+                </p>
+                <span className="text-xs text-gray-400">추천 학과 {count}개</span>
+              </button>
+            );
+          })}
+        </div>
+      </motion.aside>
+    </motion.div>
+  );
+};
+
+// --- App ---
+
 export default function App() {
+  const { user, loading, signOut } = useAuth();
   const [results, setResults] = useState<Recommendation[] | null>(null);
-  const [showStartModal, setShowStartModal] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] font-sans selection:bg-indigo-100 selection:text-indigo-900">
-      <Header onStart={() => setShowStartModal(true)} />
-      
+      <Header
+        onLoginClick={() => setShowAuth(true)}
+        onHistoryClick={() => setShowHistory(true)}
+        onSignOut={async () => {
+          await signOut();
+          setResults(null);
+        }}
+      />
+
       <main>
         <AnimatePresence mode="wait">
           {!results ? (
@@ -450,7 +870,15 @@ export default function App() {
             >
               <Hero />
               <div className="px-6 pb-24">
-                <RecommendationForm onRecommend={setResults} />
+                {loading ? (
+                  <div className="max-w-2xl mx-auto flex items-center justify-center py-20">
+                    <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                  </div>
+                ) : user ? (
+                  <RecommendationForm userId={user.id} onRecommend={setResults} />
+                ) : (
+                  <LoginCTA onLogin={() => setShowAuth(true)} />
+                )}
               </div>
             </motion.div>
           ) : (
@@ -469,40 +897,18 @@ export default function App() {
       </main>
 
       <AnimatePresence>
-        {showStartModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-indigo-900/40 backdrop-blur-md"
-            onClick={() => setShowStartModal(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-10 text-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Sparkles className="w-10 h-10 text-indigo-600" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">진로 탐색 시작하기</h3>
-              <p className="text-gray-600 mb-8 leading-relaxed">
-                DreamPath AI와 함께 당신의 미래를 설계해보세요. <br />
-                몇 가지 질문에 답하면 최적의 학과를 추천해드립니다.
-              </p>
-              <button 
-                onClick={() => {
-                  setShowStartModal(false);
-                  window.scrollTo({ top: 500, behavior: 'smooth' });
-                }}
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-              >
-                지금 바로 시작하기
-              </button>
-            </motion.div>
-          </motion.div>
+        {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showHistory && (
+          <HistoryPanel
+            onClose={() => setShowHistory(false)}
+            onSelect={(r) => {
+              setResults(r);
+              setShowHistory(false);
+            }}
+          />
         )}
       </AnimatePresence>
 
