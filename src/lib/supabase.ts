@@ -45,6 +45,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      research_suggestions: {
+        Row: {
+          id: string;
+          user_id: string;
+          created_at: string;
+          target_department: string;
+          career_goal: string;
+          user_grade: string;
+          interest_topic: string;
+          result_json: unknown;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          created_at?: string;
+          target_department: string;
+          career_goal: string;
+          user_grade: string;
+          interest_topic: string;
+          result_json: unknown;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          created_at?: string;
+          target_department?: string;
+          career_goal?: string;
+          user_grade?: string;
+          interest_topic?: string;
+          result_json?: unknown;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
