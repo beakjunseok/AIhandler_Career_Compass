@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, GraduationCap, BookOpen, Target, Sparkles, ArrowRight, Loader2,
-  School, ChevronRight, Mail, Lock, LogOut, History, User as UserIcon, X,
+  School, ChevronRight, Lock, LogOut, History, User as UserIcon, X,
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { getRecommendations, type Recommendation } from './services/geminiService';
@@ -37,7 +37,7 @@ const Header = ({
   onHistoryClick: () => void;
   onSignOut: () => void;
 }) => {
-  const { user } = useAuth();
+  const { user, displayName } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -71,13 +71,13 @@ const Header = ({
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 transition-colors px-3 py-2 rounded-full"
-              title={user.email ?? '계정'}
+              title={displayName ?? '계정'}
             >
               <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center">
                 <UserIcon className="w-3.5 h-3.5 text-white" />
               </div>
               <span className="text-sm font-medium text-gray-700 hidden sm:block max-w-[140px] truncate">
-                {user.email}
+                {displayName ?? '계정'}
               </span>
             </button>
             <AnimatePresence>
@@ -91,7 +91,7 @@ const Header = ({
                 >
                   <div className="px-4 py-3 border-b border-gray-100">
                     <p className="text-xs text-gray-400">로그인됨</p>
-                    <p className="text-sm font-medium text-gray-800 truncate">{user.email}</p>
+                    <p className="text-sm font-medium text-gray-800 truncate">{displayName ?? '계정'}</p>
                   </div>
                   <button
                     onClick={() => { setMenuOpen(false); onHistoryClick(); }}
@@ -180,7 +180,7 @@ const LoginCTA = ({ onLogin }: { onLogin: () => void }) => (
 const AuthModal = ({ onClose }: { onClose: () => void }) => {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
-  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -190,8 +190,8 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
     e.preventDefault();
     setError(null);
     setInfo(null);
-    if (!email || !password) {
-      setError('이메일과 비밀번호를 입력해주세요.');
+    if (!name.trim() || !password) {
+      setError('이름과 비밀번호를 입력해주세요.');
       return;
     }
     if (mode === 'signup' && password.length < 6) {
@@ -200,15 +200,17 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
     }
     setSubmitting(true);
     const { error } = mode === 'login'
-      ? await signIn(email, password)
-      : await signUp(email, password);
+      ? await signIn(name, password)
+      : await signUp(name, password);
     setSubmitting(false);
     if (error) {
       setError(error);
       return;
     }
     if (mode === 'signup') {
-      setInfo('가입 완료. 이메일 인증이 필요하면 메일함을 확인해주세요. 인증이 꺼져 있다면 바로 로그인됩니다.');
+      // After successful signup Supabase returns a session (Confirm email must be OFF).
+      // The auth listener will pick it up and close the modal naturally; we close here too.
+      onClose();
     } else {
       onClose();
     }
@@ -268,15 +270,16 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
           <form onSubmit={submit} className="space-y-4">
             <div>
               <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-2">
-                <Mail className="w-3.5 h-3.5" /> 이메일
+                <UserIcon className="w-3.5 h-3.5" /> 이름
               </label>
               <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                autoComplete={mode === 'login' ? 'username' : 'off'}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-800"
-                placeholder="you@example.com"
+                placeholder={mode === 'signup' ? '예: 홍길동' : '본인 이름'}
+                maxLength={40}
               />
             </div>
             <div>
@@ -319,7 +322,7 @@ const AuthModal = ({ onClose }: { onClose: () => void }) => {
         </div>
 
         <div className="p-8 pt-6 text-center text-xs text-gray-400">
-          가입 시 이메일·비밀번호는 Supabase Auth에 안전하게 저장됩니다.
+          이름은 본인 식별용입니다. 같은 이름은 한 번만 가입할 수 있어요.
         </div>
       </motion.div>
     </motion.div>
