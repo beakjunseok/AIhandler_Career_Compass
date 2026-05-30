@@ -2023,6 +2023,7 @@ type MemoFormProps = {
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (draft: MemoDraft) => void;
+  key?: React.Key;
 };
 
 const MemoForm = ({ initial, submitting, onCancel, onSubmit }: MemoFormProps) => {
