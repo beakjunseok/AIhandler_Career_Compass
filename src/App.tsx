@@ -2018,17 +2018,14 @@ const HistoryPanel = ({
 
 const EMPTY_MEMO: MemoDraft = { subject: '', summary: '', books: '', future_research: '' };
 
-const MemoForm = ({
-  initial,
-  submitting,
-  onCancel,
-  onSubmit,
-}: {
+type MemoFormProps = {
   initial: MemoDraft;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (draft: MemoDraft) => void;
-}) => {
+};
+
+const MemoForm = ({ initial, submitting, onCancel, onSubmit }: MemoFormProps) => {
   const [draft, setDraft] = useState<MemoDraft>(initial);
   const canSave = draft.subject.trim().length > 0 && draft.summary.trim().length > 0;
 
