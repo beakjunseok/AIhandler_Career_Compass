@@ -14,12 +14,48 @@ type SchoolDetail = {
   _fallback?: boolean;
 };
 
+const BASE = "https://www.career.go.kr/cnet/openapi/getOpenApi";
+
+function asArray(v: unknown): any[] {
+  return Array.isArray(v) ? v : v == null ? [] : [v];
+}
+
 function pick(obj: any, keys: string[]): string | undefined {
   for (const k of keys) {
     const v = obj?.[k];
     if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number") return String(v);
   }
   return undefined;
+}
+
+function isErrorContent(content: any[]): boolean {
+  return content.length > 0 && content[0] && content[0].code !== undefined;
+}
+
+/** 커리어넷 학교정보(SCHOOL) API에서 대학 기본정보 조회. */
+async function fetchCareernetSchool(apiKey: string, name: string): Promise<SchoolDetail | null> {
+  const url = `${BASE}?apiKey=${apiKey}&svcType=api&svcCode=SCHOOL&contentType=json&gubun=univ_list&searchSchulNm=${encodeURIComponent(
+    name
+  )}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  const list = asArray(data?.dataSearch?.content);
+  if (isErrorContent(list)) return null;
+  if (list.length === 0) return null;
+
+  const hit =
+    list.find((it) => pick(it, ["schoolName", "schoolNm"]) === name) ?? list[0];
+
+  return {
+    name: pick(hit, ["schoolName", "schoolNm"]) ?? name,
+    region: pick(hit, ["region", "adres", "addr"]),
+    type: pick(hit, ["schoolType", "schoolGubun"]),
+    estabType: pick(hit, ["estType", "estabType", "schoolEstablish"]),
+    address: pick(hit, ["adres", "addr", "address"]),
+    homepage: pick(hit, ["link", "homepage", "url", "schoolURL"]),
+    phone: pick(hit, ["telNo", "tel", "phone"]),
+  };
 }
 
 async function geminiSchoolFallback(name: string, major?: string): Promise<SchoolDetail | null> {
@@ -75,23 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 1) 커리어넷 대학 정보(SCHOOL) API
   if (apiKey) {
     try {
-      const url = `https://www.career.go.kr/cnet/openapi/getOpenApi?apiKey=${apiKey}&svcType=api&svcCode=SCHOOL&contentType=json&gubun=univ_list&searchSchulNm=${encodeURIComponent(name)}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      const list: any[] = data?.dataSearch?.content ?? [];
-      const hit =
-        list.find((it) => pick(it, ["schoolName", "schoolNm"]) === name) ?? list[0];
-      if (hit) {
-        detail = {
-          name: pick(hit, ["schoolName", "schoolNm"]) ?? name,
-          region: pick(hit, ["region", "adres", "addr"]),
-          type: pick(hit, ["schoolType", "schoolGubun"]),
-          estabType: pick(hit, ["estType", "estabType", "schoolEstablish"]),
-          address: pick(hit, ["adres", "addr", "address"]),
-          homepage: pick(hit, ["link", "homepage", "url"]),
-          phone: pick(hit, ["telNo", "tel", "phone"]),
-        };
-      }
+      detail = await fetchCareernetSchool(apiKey, name);
     } catch (error) {
       console.error("CareerNet SCHOOL API Error:", error);
     }
