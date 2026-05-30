@@ -19,6 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     journalUnit,
     journalSubUnit,
     additionalContext,
+    journalMemos,
   } = req.body ?? {};
   const geminiApiKey = process.env.GEMINI_API_KEY;
 
@@ -46,7 +47,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ${journalUnit ? `- 집중할 대단원: ${journalUnit}` : ""}
       ${journalSubUnit ? `- 집중할 소단원: ${journalSubUnit}` : ""}
       ${additionalContext ? `- 연관 짓고 싶은 과목/내용: ${additionalContext}` : ""}
-
+${
+  (journalMemos ?? "").trim()
+    ? `
+      ## 학생이 지금까지 생기부에 작성한 내용 (직접 기록한 메모)
+      아래는 학생이 이미 생기부에 작성해 온 활동/탐구 기록입니다. 이미 다룬 주제와 중복되지 않으면서,
+      "향후 탐구하겠다"고 적어둔 방향을 이어가거나 심화·확장하는 새로운 탐구 주제를 우선 제안하세요.
+${(journalMemos as string)
+        .trim()
+        .split("\n")
+        .map((l) => `      ${l}`)
+        .join("\n")}
+`
+    : ""
+}
       ${curriculumPromptBlock()}
 
       ## 작성 규칙 (엄격히 준수)
