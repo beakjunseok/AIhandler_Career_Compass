@@ -15,6 +15,7 @@ export interface ResearchInput {
   journalUnit?: string;
   journalSubUnit?: string;
   additionalContext: string;
+  journalMemos?: string;
 }
 
 export async function getResearchTopics(input: ResearchInput): Promise<ResearchSuggestion[]> {

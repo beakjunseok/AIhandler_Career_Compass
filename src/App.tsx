@@ -592,6 +592,66 @@ const SubjectChecklist = ({
   );
 };
 
+// --- Journal-memo opt-in: fetch + format the user's saved 생기부 memos ---
+
+async function fetchMemoContext(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('journal_memos')
+    .select('subject, summary, books, future_research')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error || !data || data.length === 0) return '';
+  return data
+    .map((m, i) => {
+      const lines = [`${i + 1}. [${m.subject}] ${m.summary}`];
+      if (m.books) lines.push(`   - 활용 도서: ${m.books}`);
+      if (m.future_research) lines.push(`   - 향후 탐구: ${m.future_research}`);
+      return lines.join('\n');
+    })
+    .join('\n');
+}
+
+const MemoOptIn = ({
+  checked,
+  onChange,
+  accent,
+  description,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  accent: 'indigo' | 'emerald';
+  description: string;
+}) => (
+  <label
+    className={cn(
+      'flex items-start gap-3 p-4 rounded-2xl border cursor-pointer transition-all',
+      checked
+        ? accent === 'indigo'
+          ? 'bg-indigo-50 border-indigo-200'
+          : 'bg-emerald-50 border-emerald-200'
+        : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+    )}
+  >
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+      className={cn(
+        'mt-0.5 w-4 h-4 rounded border-gray-300 cursor-pointer',
+        accent === 'indigo' ? 'accent-indigo-600' : 'accent-emerald-600'
+      )}
+    />
+    <div>
+      <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
+        <NotebookPen className={cn('w-4 h-4', accent === 'indigo' ? 'text-indigo-500' : 'text-emerald-500')} />
+        내 생기부 작성 메모 참고하기
+      </span>
+      <p className="text-xs text-gray-500 mt-1">{description}</p>
+    </div>
+  </label>
+);
+
 // --- Major Recommendation Form ---
 
 const MajorForm = ({
@@ -610,6 +670,7 @@ const MajorForm = ({
     grade: defaultGrade,
   });
   const [subjectStatus, setSubjectStatus] = useState<SubjectStatus>({});
+  const [useMemos, setUseMemos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -649,6 +710,7 @@ const MajorForm = ({
 
     setLoading(true);
     try {
+      const journalMemos = useMemos ? await fetchMemoContext(userId) : '';
       const results = await getRecommendations({
         interests: formData.interests,
         favoriteSubjects: formData.favoriteSubjects,
@@ -656,6 +718,7 @@ const MajorForm = ({
         grade: formData.grade,
         currentSubjects,
         completedSubjects,
+        journalMemos,
       });
 
       const { error } = await supabase.from('recommendations').insert({
@@ -752,6 +815,13 @@ const MajorForm = ({
           />
         </div>
 
+        <MemoOptIn
+          checked={useMemos}
+          onChange={setUseMemos}
+          accent="indigo"
+          description="지금까지 기록한 생기부 작성 메모(과목·내용·도서·향후 탐구)를 반영해 학과를 추천해요."
+        />
+
         {Object.keys(fieldErrors).length > 0 && (
           <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 space-y-1">
             <p className="font-bold">아래 항목을 다시 입력해주세요</p>
@@ -812,6 +882,7 @@ const ResearchForm = ({
     journalSubUnit: '',
     additionalContext: '',
   });
+  const [useMemos, setUseMemos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -874,7 +945,8 @@ const ResearchForm = ({
 
     setLoading(true);
     try {
-      const results = await getResearchTopics(formData);
+      const journalMemos = useMemos ? await fetchMemoContext(userId) : '';
+      const results = await getResearchTopics({ ...formData, journalMemos });
 
       const { error } = await supabase.from('research_suggestions').insert({
         user_id: userId,
@@ -1014,6 +1086,13 @@ const ResearchForm = ({
             onChange={(e) => setFormData({ ...formData, additionalContext: e.target.value })}
           />
         </div>
+
+        <MemoOptIn
+          checked={useMemos}
+          onChange={setUseMemos}
+          accent="emerald"
+          description="지금까지 기록한 생기부 작성 메모를 반영해, 이미 다룬 내용과 겹치지 않고 향후 탐구 방향을 이어가는 주제를 제안해요."
+        />
 
         {Object.keys(fieldErrors).length > 0 && (
           <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 space-y-1">

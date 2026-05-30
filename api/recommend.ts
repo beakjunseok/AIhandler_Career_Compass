@@ -59,6 +59,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 `
         : "";
 
+    const memos = (userInput.journalMemos ?? "").trim();
+    const memoBlock = memos
+      ? `
+      ## 학생이 지금까지 생기부에 작성한 내용 (직접 기록한 메모)
+      아래는 학생이 실제로 생기부에 작성해 온 활동/탐구 기록입니다. 이 흐름과 관심사의 일관성을 고려해,
+      학생이 쌓아온 활동을 잘 살릴 수 있는 학과를 우선 추천하고, matchReason에 그 연결점을 언급하세요.
+${memos
+          .split("\n")
+          .map((l) => `      ${l}`)
+          .join("\n")}
+`
+      : "";
+
     // 2. 커리어넷 데이터 페치
     let apiData: any[] = [];
     if (careerNetApiKey) {
@@ -80,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       - 좋아하는 과목: ${userInput.favoriteSubjects}
       - 장래희망: ${userInput.careerGoal}
 ${subjectLines}
-${gradeConstraint}
+${gradeConstraint}${memoBlock}
       참고할 실제 학과 데이터 (커리어넷 검색 결과):
       ${JSON.stringify(apiData.slice(0, 10))}
 

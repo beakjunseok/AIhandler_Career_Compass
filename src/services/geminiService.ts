@@ -17,6 +17,7 @@ export interface MajorInput {
   grade: string;
   currentSubjects: string;
   completedSubjects?: string;
+  journalMemos?: string;
 }
 
 export async function getRecommendations(userInput: MajorInput): Promise<Recommendation[]> {
