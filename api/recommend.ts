@@ -37,6 +37,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!kwResult.text) throw new Error("Gemini keyword generation failed");
     const keywords = JSON.parse(kwResult.text);
 
+    const grade = String(userInput.grade ?? "");
+    const isUpper = grade === "2" || grade === "3";
+    const completed = (userInput.completedSubjects ?? "").trim();
+    const current = (userInput.currentSubjects ?? "").trim();
+    const subjectLines = [
+      completed ? `      - 이수 완료한 선택과목: ${completed}` : "",
+      current ? `      - 현재 이수 중(예정)인 선택과목: ${current}` : "",
+      !completed && !current ? "      - 선택과목: (미입력)" : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const gradeConstraint =
+      isUpper && (completed || current)
+        ? `
+      ## 매우 중요한 제약 (고${grade} 대상)
+      학생은 이미 선택과목을 일부 확정했습니다. 위 "이수 완료/이수 중" 과목으로 진학이 현실적으로 가능한 학과만 추천하세요.
+      해당 과목들과 무관하거나, 학생이 이수하지 않은 핵심 필수과목을 반드시 요구하는 학과(예: 자연계 과목 미이수 상태의 의예과·공학계열)는 제외하세요.
+      학생이 선택한 과목들의 강점을 살릴 수 있는 학과를 우선 추천하세요.
+`
+        : "";
+
     // 2. 커리어넷 데이터 페치
     let apiData: any[] = [];
     if (careerNetApiKey) {
@@ -57,8 +79,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       - 취향/관심사: ${userInput.interests}
       - 좋아하는 과목: ${userInput.favoriteSubjects}
       - 장래희망: ${userInput.careerGoal}
-      - 현재 수강(예정) 선택과목: ${userInput.currentSubjects || "(미입력)"}
-
+${subjectLines}
+${gradeConstraint}
       참고할 실제 학과 데이터 (커리어넷 검색 결과):
       ${JSON.stringify(apiData.slice(0, 10))}
 
