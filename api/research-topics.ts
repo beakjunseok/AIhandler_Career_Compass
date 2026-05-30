@@ -16,6 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     grade,
     interestTopic,
     journalSubject,
+    journalUnit,
+    journalSubUnit,
     additionalContext,
   } = req.body ?? {};
   const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -41,6 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       - 장래희망/진로: ${careerGoal || "(미입력)"}
       - 관심 주제/분야: ${interestTopic || "(미입력)"}
       ${journalSubject ? `- 생기부를 작성하려는 과목: ${journalSubject}` : ""}
+      ${journalUnit ? `- 집중할 대단원: ${journalUnit}` : ""}
+      ${journalSubUnit ? `- 집중할 소단원: ${journalSubUnit}` : ""}
       ${additionalContext ? `- 연관 짓고 싶은 과목/내용: ${additionalContext}` : ""}
 
       ${curriculumPromptBlock()}
@@ -49,6 +53,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       1. ${
         journalSubject
           ? `학생이 지정한 "${journalSubject}" 과목을 모든 5개 주제의 핵심 연계 과목으로 포함하고, linkedSubjects의 첫 번째 항목으로 둘 것. ${
+              journalUnit
+                ? `특히 "${journalUnit}"${journalSubUnit ? ` 중 "${journalSubUnit}"` : ""} 단원에서 배우는 핵심 개념을 출발점으로 삼아, 그 단원 내용과 직접 연결되는 탐구 주제로 구성할 것.`
+                : ""
+            } ${
               additionalContext
                 ? `추가로 "${additionalContext}"와 자연스럽게 연결되는 주제로 구성할 것.`
                 : ""

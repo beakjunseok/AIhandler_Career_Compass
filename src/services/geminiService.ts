@@ -16,6 +16,7 @@ export interface MajorInput {
   careerGoal: string;
   grade: string;
   currentSubjects: string;
+  completedSubjects?: string;
 }
 
 export async function getRecommendations(userInput: MajorInput): Promise<Recommendation[]> {

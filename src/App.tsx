@@ -11,6 +11,7 @@ import { getResearchTopics, type ResearchSuggestion } from './services/researchS
 import { useAuth } from './lib/AuthContext';
 import { supabase } from './lib/supabase';
 import { CURRICULUM_2022 } from '../api/curriculum';
+import { checkKoreanIntegrity, validateRelevance, type FieldSpec } from './lib/validation';
 
 const BRAND = 'Career Compass';
 
@@ -22,7 +23,6 @@ type MajorFormData = {
   favoriteSubjects: string;
   careerGoal: string;
   grade: string;
-  currentSubjects: string;
 };
 
 type ResearchFormData = {
@@ -31,8 +31,12 @@ type ResearchFormData = {
   grade: string;
   interestTopic: string;
   journalSubject: string;
+  journalUnit: string;
+  journalSubUnit: string;
   additionalContext: string;
 };
+
+type CurriculumUnit = { unit: string; subUnits: string[] };
 
 type MajorHistoryRow = {
   id: string;
@@ -71,12 +75,14 @@ const Header = ({
   onLoginClick,
   onOpenHistory,
   onSignOut,
+  onHome,
 }: {
   activeTab: TabKey;
   onTabChange: (t: TabKey) => void;
   onLoginClick: () => void;
   onOpenHistory: (kind: HistoryKind) => void;
   onSignOut: () => void;
+  onHome: () => void;
 }) => {
   const { user, displayName } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -101,12 +107,18 @@ const Header = ({
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+        <button
+          type="button"
+          onClick={onHome}
+          className="flex items-center gap-2 group"
+          title="처음 화면으로"
+          aria-label="처음 화면으로"
+        >
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center group-hover:bg-indigo-700 transition-colors">
             <Compass className="text-white w-5 h-5" />
           </div>
           <span className="font-bold text-xl tracking-tight text-gray-900">{BRAND}</span>
-        </div>
+        </button>
 
         <nav className="hidden md:flex items-center gap-1 bg-gray-100/70 rounded-full p-1">
           {tabs.map((t) => (
@@ -476,6 +488,84 @@ const SubjectSelect = ({ value, onChange }: { value: string; onChange: (v: strin
   </select>
 );
 
+// --- Subject checklist (grouped checkboxes) for 학과 추천 ---
+
+type SubjectStatus = Record<string, 'current' | 'done'>;
+
+const SubjectChecklist = ({
+  grade,
+  status,
+  onChange,
+}: {
+  grade: string;
+  status: SubjectStatus;
+  onChange: (next: SubjectStatus) => void;
+}) => {
+  const advanced = grade === '2' || grade === '3';
+  const cycle = (name: string) => {
+    const cur = status[name];
+    const next: SubjectStatus = { ...status };
+    if (!advanced) {
+      if (cur) delete next[name];
+      else next[name] = 'current';
+    } else {
+      if (!cur) next[name] = 'current';
+      else if (cur === 'current') next[name] = 'done';
+      else delete next[name];
+    }
+    onChange(next);
+  };
+
+  return (
+    <div>
+      {advanced && (
+        <div className="flex items-center gap-4 mb-3 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-400 inline-block" /> 현재 이수 중</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> 이수 완료</span>
+          <span className="text-gray-400">(과목을 눌러 상태를 바꿔요)</span>
+        </div>
+      )}
+      <div className="max-h-72 overflow-y-auto custom-scrollbar border border-gray-200 rounded-2xl p-4 space-y-4 bg-gray-50/50">
+        {CURRICULUM_2022.map((g) => {
+          const all = [
+            ...(g.common ?? []),
+            ...(g.general ?? []),
+            ...(g.career ?? []),
+            ...(g.fusion ?? []),
+          ];
+          return (
+            <div key={g.area}>
+              <p className="text-xs font-bold text-gray-400 mb-2">{g.area}</p>
+              <div className="flex flex-wrap gap-2">
+                {all.map((name) => {
+                  const st = status[name];
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => cycle(name)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                        !st && 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300',
+                        st === 'current' && (advanced
+                          ? 'bg-amber-100 border-amber-300 text-amber-800'
+                          : 'bg-indigo-100 border-indigo-300 text-indigo-800'),
+                        st === 'done' && 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                      )}
+                    >
+                      {st === 'done' ? '✓ ' : ''}{name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // --- Major Recommendation Form ---
 
 const MajorForm = ({
@@ -485,24 +575,62 @@ const MajorForm = ({
 }: {
   userId: string;
   defaultGrade: string;
-  onRecommend: (data: Recommendation[]) => void;
+  onRecommend: (data: Recommendation[], takenSubjects: string) => void;
 }) => {
   const [formData, setFormData] = useState<MajorFormData>({
     interests: '',
     favoriteSubjects: '',
     careerGoal: '',
     grade: defaultGrade,
-    currentSubjects: '',
   });
+  const [subjectStatus, setSubjectStatus] = useState<SubjectStatus>({});
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.interests || !formData.favoriteSubjects || !formData.careerGoal) return;
 
+    const specs: FieldSpec[] = [
+      { key: 'interests', label: '관심 분야', question: '평소 어떤 분야에 관심이 많나요?', value: formData.interests, required: true },
+      { key: 'favoriteSubjects', label: '좋아하는 과목', question: '학교에서 가장 좋아하는 과목은 무엇인가요?', value: formData.favoriteSubjects, required: true },
+      { key: 'careerGoal', label: '장래희망', question: '나중에 어떤 일을 하고 싶나요? (장래희망)', value: formData.careerGoal, required: true },
+    ];
+    const integrity = checkKoreanIntegrity(specs);
+    if (Object.keys(integrity).length > 0) {
+      setFieldErrors(integrity);
+      return;
+    }
+    setFieldErrors({});
+    setValidating(true);
+    const { ok, issues } = await validateRelevance(
+      specs.map((s) => ({ key: s.key, question: s.question, value: s.value }))
+    );
+    setValidating(false);
+    if (!ok) {
+      const errs: Record<string, string> = {};
+      for (const it of issues) errs[it.key] = it.reason;
+      setFieldErrors(errs);
+      return;
+    }
+
+    const completed = Object.entries(subjectStatus).filter(([, s]) => s === 'done').map(([n]) => n);
+    const current = Object.entries(subjectStatus).filter(([, s]) => s === 'current').map(([n]) => n);
+    const completedSubjects = completed.join(', ');
+    const currentSubjects = current.join(', ');
+    const takenSubjects = [...completed, ...current].join(', ');
+
     setLoading(true);
     try {
-      const results = await getRecommendations(formData);
+      const results = await getRecommendations({
+        interests: formData.interests,
+        favoriteSubjects: formData.favoriteSubjects,
+        careerGoal: formData.careerGoal,
+        grade: formData.grade,
+        currentSubjects,
+        completedSubjects,
+      });
 
       const { error } = await supabase.from('recommendations').insert({
         user_id: userId,
@@ -510,11 +638,11 @@ const MajorForm = ({
         user_subjects: formData.favoriteSubjects,
         user_career_goal: formData.careerGoal,
         user_grade: formData.grade,
-        result_json: { recs: results, currentSubjects: formData.currentSubjects },
+        result_json: { recs: results, currentSubjects: takenSubjects, completedSubjects },
       });
       if (error) console.error('Failed to save recommendation:', error);
 
-      onRecommend(results);
+      onRecommend(results, takenSubjects);
     } catch (err: any) {
       console.error(err);
       alert(err.message || '추천을 가져오는 중 오류가 발생했습니다.');
@@ -568,15 +696,20 @@ const MajorForm = ({
         <div className="space-y-4">
           <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
             <ListChecks className="w-4 h-4 text-indigo-500" />
-            현재 수강(예정) 선택과목 (선택)
+            {formData.grade === '1'
+              ? '들을 (예정인) 선택과목 (선택)'
+              : '선택과목 이수 현황 (선택)'}
           </label>
-          <textarea
-            placeholder="예: 미적분Ⅰ, 화학, 생명과학, 영어Ⅰ, 사회와 문화"
-            className="w-full px-5 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none resize-none h-20 text-gray-800"
-            value={formData.currentSubjects}
-            onChange={(e) => setFormData({ ...formData, currentSubjects: e.target.value })}
+          <SubjectChecklist
+            grade={formData.grade}
+            status={subjectStatus}
+            onChange={setSubjectStatus}
           />
-          <p className="text-xs text-gray-400">쉼표로 구분하여 입력. 추천 학과의 필요 과목과 비교해드려요.</p>
+          <p className="text-xs text-gray-400">
+            {formData.grade === '1'
+              ? '관심 있는 과목을 골라주세요. 추천 학과의 필요 과목과 비교해드려요.'
+              : '현재 선택과목을 바탕으로 진학 가능한 학과를 우선 추천하고, 필요 과목과 비교해드려요.'}
+          </p>
         </div>
 
         <div className="space-y-4">
@@ -593,15 +726,29 @@ const MajorForm = ({
           />
         </div>
 
+        {Object.keys(fieldErrors).length > 0 && (
+          <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 space-y-1">
+            <p className="font-bold">아래 항목을 다시 입력해주세요</p>
+            {Object.entries(fieldErrors).map(([k, m]) => (
+              <p key={k}>· {({ interests: '관심 분야', favoriteSubjects: '좋아하는 과목', careerGoal: '장래희망' } as Record<string, string>)[k] ?? k}: {m}</p>
+            ))}
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || validating}
           className={cn(
             'w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3',
-            loading && 'opacity-80 cursor-not-allowed'
+            (loading || validating) && 'opacity-80 cursor-not-allowed'
           )}
         >
-          {loading ? (
+          {validating ? (
+            <>
+              <Loader2 className="w-6 h-6 animate-spin" />
+              입력 내용을 확인 중입니다...
+            </>
+          ) : loading ? (
             <>
               <Loader2 className="w-6 h-6 animate-spin" />
               AI가 분석 중입니다...
@@ -635,13 +782,69 @@ const ResearchForm = ({
     grade: defaultGrade,
     interestTopic: '',
     journalSubject: '',
+    journalUnit: '',
+    journalSubUnit: '',
     additionalContext: '',
   });
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [units, setUnits] = useState<CurriculumUnit[]>([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+
+  useEffect(() => {
+    const subject = formData.journalSubject;
+    if (!subject) {
+      setUnits([]);
+      return;
+    }
+    let cancelled = false;
+    setUnitsLoading(true);
+    setUnits([]);
+    (async () => {
+      try {
+        const res = await fetch(`/api/curriculum-units?subject=${encodeURIComponent(subject)}`);
+        const json = await res.json();
+        if (cancelled) return;
+        setUnits(Array.isArray(json?.units) ? (json.units as CurriculumUnit[]) : []);
+      } catch {
+        if (!cancelled) setUnits([]);
+      } finally {
+        if (!cancelled) setUnitsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [formData.journalSubject]);
+
+  const subUnits = units.find((u) => u.unit === formData.journalUnit)?.subUnits ?? [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.targetDepartment.trim()) return;
+
+    const specs: FieldSpec[] = [
+      { key: 'targetDepartment', label: '목표 학과', question: '목표하는 대학 학과는 무엇인가요?', value: formData.targetDepartment, required: true, allowNonKorean: true },
+      { key: 'careerGoal', label: '장래희망', question: '장래희망/진로는 무엇인가요?', value: formData.careerGoal },
+      { key: 'interestTopic', label: '관심 주제', question: '관심 있는 주제나 분야는 무엇인가요?', value: formData.interestTopic },
+      { key: 'additionalContext', label: '연관 내용', question: '연관 짓고 싶은 과목이나 활동 내용은 무엇인가요?', value: formData.additionalContext },
+    ];
+    const integrity = checkKoreanIntegrity(specs);
+    if (Object.keys(integrity).length > 0) {
+      setFieldErrors(integrity);
+      return;
+    }
+    setFieldErrors({});
+    setValidating(true);
+    const { ok, issues } = await validateRelevance(
+      specs.map((s) => ({ key: s.key, question: s.question, value: s.value }))
+    );
+    setValidating(false);
+    if (!ok) {
+      const errs: Record<string, string> = {};
+      for (const it of issues) errs[it.key] = it.reason;
+      setFieldErrors(errs);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -716,9 +919,48 @@ const ResearchForm = ({
           </label>
           <SubjectSelect
             value={formData.journalSubject}
-            onChange={(v) => setFormData({ ...formData, journalSubject: v })}
+            onChange={(v) => setFormData({ ...formData, journalSubject: v, journalUnit: '', journalSubUnit: '' })}
           />
           <p className="text-xs text-gray-400">선택하면 모든 주제가 이 과목과 연계되도록 생성돼요.</p>
+
+          {formData.journalSubject && (
+            <div className="space-y-3 pt-1">
+              {unitsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-400 px-1">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  단원 정보를 불러오는 중…
+                </div>
+              ) : units.length > 0 ? (
+                <>
+                  <select
+                    value={formData.journalUnit}
+                    onChange={(e) => setFormData({ ...formData, journalUnit: e.target.value, journalSubUnit: '' })}
+                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-800 appearance-none"
+                  >
+                    <option value="">대단원 선택 (선택)…</option>
+                    {units.map((u) => (
+                      <option key={u.unit} value={u.unit}>{u.unit}</option>
+                    ))}
+                  </select>
+                  {formData.journalUnit && subUnits.length > 0 && (
+                    <select
+                      value={formData.journalSubUnit}
+                      onChange={(e) => setFormData({ ...formData, journalSubUnit: e.target.value })}
+                      className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-800 appearance-none"
+                    >
+                      <option value="">소단원 선택 (선택)…</option>
+                      {subUnits.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="text-xs text-gray-400">대단원·소단원을 고르면 그 단원에 맞춘 탐구 주제가 생성돼요.</p>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 px-1">이 과목의 단원 정보를 불러오지 못했어요. 단원 선택 없이 진행할 수 있어요.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -747,15 +989,29 @@ const ResearchForm = ({
           />
         </div>
 
+        {Object.keys(fieldErrors).length > 0 && (
+          <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 space-y-1">
+            <p className="font-bold">아래 항목을 다시 입력해주세요</p>
+            {Object.entries(fieldErrors).map(([k, m]) => (
+              <p key={k}>· {({ targetDepartment: '목표 학과', careerGoal: '장래희망', interestTopic: '관심 주제', additionalContext: '연관 내용' } as Record<string, string>)[k] ?? k}: {m}</p>
+            ))}
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={loading || !formData.targetDepartment.trim()}
+          disabled={loading || validating || !formData.targetDepartment.trim()}
           className={cn(
             'w-full py-5 bg-emerald-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-emerald-200 hover:bg-emerald-700 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3',
-            (loading || !formData.targetDepartment.trim()) && 'opacity-60 cursor-not-allowed'
+            (loading || validating || !formData.targetDepartment.trim()) && 'opacity-60 cursor-not-allowed'
           )}
         >
-          {loading ? (
+          {validating ? (
+            <>
+              <Loader2 className="w-6 h-6 animate-spin" />
+              입력 내용을 확인 중입니다...
+            </>
+          ) : loading ? (
             <>
               <Loader2 className="w-6 h-6 animate-spin" />
               AI가 탐구 주제를 설계 중입니다...
@@ -958,22 +1214,21 @@ const CurriculumModal = ({
               </p>
             </section>
 
-            <section>
-              <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4">
-                <BookOpen className="w-4 h-4 text-indigo-500" />
-                전공 관련 추천 이수 과목
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {recommendation.curriculum.map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[10px] font-bold text-indigo-600 shadow-sm">
-                      {i + 1}
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
+            {recommendation.careerPaths?.length > 0 && (
+              <section>
+                <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4">
+                  <Target className="w-4 h-4 text-emerald-500" />
+                  졸업 후 진로
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {recommendation.careerPaths.map((path, i) => (
+                    <span key={i} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold">
+                      {path}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
               <h4 className="text-sm font-bold text-gray-900 mb-3">학과 소개</h4>
@@ -995,20 +1250,185 @@ const CurriculumModal = ({
   );
 };
 
-// --- Dept Universities Modal ---
+// --- University Detail Modal ---
 
-const DeptUnivListModal = ({ department, onClose }: { department: string; onClose: () => void }) => {
-  const [items, setItems] = useState<UnivItem[] | null>(null);
+type SchoolDetail = {
+  name: string;
+  region?: string;
+  type?: string;
+  estabType?: string;
+  address?: string;
+  homepage?: string;
+  phone?: string;
+  intro?: string;
+  majors?: string[];
+  _fallback?: boolean;
+};
+
+const UnivDetailModal = ({
+  schoolName,
+  major,
+  onClose,
+}: {
+  schoolName: string;
+  major: string;
+  onClose: () => void;
+}) => {
+  const [detail, setDetail] = useState<SchoolDetail | null>(null);
+  const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/careernet/majors?search=${encodeURIComponent(department)}`);
-        if (!res.ok) throw new Error(`커리어넷 API 호출 실패 (${res.status})`);
+        const res = await fetch(
+          `/api/careernet/school?search=${encodeURIComponent(schoolName)}&major=${encodeURIComponent(major)}`
+        );
+        if (!res.ok) throw new Error(`대학 정보 호출 실패 (${res.status})`);
         const json = await res.json();
         if (cancelled) return;
+        setSource(typeof json?.source === 'string' ? json.source : null);
+        setDetail((json?.school ?? null) as SchoolDetail | null);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || '대학 정보를 가져오지 못했습니다.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [schoolName, major]);
+
+  const homepageHref = detail?.homepage
+    ? /^https?:\/\//.test(detail.homepage)
+      ? detail.homepage
+      : `https://${detail.homepage}`
+    : null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-gray-900/50 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.92, y: 20 }}
+        className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-7 border-b border-gray-100 flex items-start justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Building2 className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">대학 정보</span>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 truncate">{schoolName}</h3>
+            <p className="text-xs text-gray-400 mt-1">
+              {source === 'fallback' ? '출처: AI 보강 정보 (참고용)' : '출처: 커리어넷 대학 정보'}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full flex-shrink-0">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {error && (
+            <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          {!detail && !error && (
+            <div className="flex items-center justify-center py-16 text-gray-400">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
+          )}
+          {detail && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {detail.type && (
+                  <span className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold">
+                    {detail.type}
+                  </span>
+                )}
+                {detail.estabType && (
+                  <span className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold">
+                    {detail.estabType}
+                  </span>
+                )}
+                {detail.region && (
+                  <span className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold">
+                    <MapPin className="w-3 h-3" />
+                    {detail.region}
+                  </span>
+                )}
+              </div>
+
+              {detail.intro && (
+                <section>
+                  <h4 className="text-sm font-bold text-gray-900 mb-2">학교 소개</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{detail.intro}</p>
+                </section>
+              )}
+
+              {detail.address && (
+                <section>
+                  <h4 className="text-sm font-bold text-gray-900 mb-1">주소</h4>
+                  <p className="text-sm text-gray-600">{detail.address}</p>
+                </section>
+              )}
+
+              {detail.majors && detail.majors.length > 0 && (
+                <section>
+                  <h4 className="text-sm font-bold text-gray-900 mb-2">대표 개설 학과</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detail.majors.map((m, i) => (
+                      <span key={i} className="px-2.5 py-1 bg-gray-50 border border-gray-100 rounded-md text-xs text-gray-600 font-medium">
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {homepageHref && (
+                <a
+                  href={homepageHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
+                >
+                  공식 홈페이지 방문
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// --- Dept Universities Modal ---
+
+const DeptUnivListModal = ({ department, onClose }: { department: string; onClose: () => void }) => {
+  const [items, setItems] = useState<UnivItem[] | null>(null);
+  const [source, setSource] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedSchool, setSelectedSchool] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/careernet/majors?search=${encodeURIComponent(department)}`);
+        if (!res.ok) throw new Error(`대학 정보 호출 실패 (${res.status})`);
+        const json = await res.json();
+        if (cancelled) return;
+        setSource(typeof json?.source === 'string' ? json.source : null);
         setItems((json?.dataSearch?.content ?? []) as UnivItem[]);
       } catch (e: any) {
         if (!cancelled) setError(e.message || '데이터를 가져오지 못했습니다.');
@@ -1039,7 +1459,9 @@ const DeptUnivListModal = ({ department, onClose }: { department: string; onClos
               <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">전국 대학</span>
             </div>
             <h3 className="text-xl font-bold text-gray-900">{department} 운영 대학</h3>
-            <p className="text-xs text-gray-400 mt-1">출처: 커리어넷 학과 정보</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {source === 'fallback' ? '출처: AI 보강 결과 (커리어넷 미확인)' : '출처: 커리어넷 학과 정보'}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
             <X className="w-5 h-5 text-gray-400" />
@@ -1064,36 +1486,57 @@ const DeptUnivListModal = ({ department, onClose }: { department: string; onClos
           )}
           {items && items.length > 0 && (
             <div className="space-y-2">
-              {items.map((u, i) => (
-                <div key={i} className="p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 rounded-xl transition-all">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-gray-900 text-sm mb-1">
-                        {String(u.schoolName ?? '학교명 미상')}
-                      </p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {String(u.major ?? department)}
-                      </p>
+              {items.map((u, i) => {
+                const name = String(u.schoolName ?? '학교명 미상');
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedSchool(name)}
+                    className="w-full text-left p-4 bg-gray-50 hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl transition-all group"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-gray-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">
+                          {name}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {String(u.major ?? department)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-end gap-1 text-xs">
+                          {u.schoolType && (
+                            <span className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600 font-medium">
+                              {String(u.schoolType)}
+                            </span>
+                          )}
+                          {u.region && (
+                            <span className="flex items-center gap-1 text-gray-400">
+                              <MapPin className="w-3 h-3" />
+                              {String(u.region)}
+                            </span>
+                          )}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-500 transition-colors flex-shrink-0" />
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1 text-xs">
-                      {u.schoolType && (
-                        <span className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600 font-medium">
-                          {String(u.schoolType)}
-                        </span>
-                      )}
-                      {u.region && (
-                        <span className="flex items-center gap-1 text-gray-400">
-                          <MapPin className="w-3 h-3" />
-                          {String(u.region)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
+
+        <AnimatePresence>
+          {selectedSchool && (
+            <UnivDetailModal
+              schoolName={selectedSchool}
+              major={department}
+              onClose={() => setSelectedSchool(null)}
+            />
+          )}
+        </AnimatePresence>
 
         <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
           <button
@@ -1565,6 +2008,14 @@ export default function App() {
         onTabChange={setActiveTab}
         onLoginClick={() => setShowAuth(true)}
         onOpenHistory={setHistoryKind}
+        onHome={() => {
+          setActiveTab('major');
+          setMajorResults(null);
+          setResearchResults(null);
+          setMajorCurrentSubjects('');
+          setHistoryKind(null);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
         onSignOut={async () => {
           await signOut();
           setMajorResults(null);
@@ -1595,7 +2046,10 @@ export default function App() {
                   <MajorForm
                     userId={user.id}
                     defaultGrade={effectiveGrade}
-                    onRecommend={(r) => setMajorResults(r)}
+                    onRecommend={(r, taken) => {
+                      setMajorResults(r);
+                      setMajorCurrentSubjects(taken);
+                    }}
                   />
                 ) : (
                   <ResearchForm

@@ -12,6 +12,8 @@ export interface ResearchInput {
   grade: string;
   interestTopic: string;
   journalSubject: string;
+  journalUnit?: string;
+  journalSubUnit?: string;
   additionalContext: string;
 }
 
