@@ -78,6 +78,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      journal_memos: {
+        Row: {
+          id: string;
+          user_id: string;
+          created_at: string;
+          updated_at: string;
+          subject: string;
+          summary: string;
+          books: string | null;
+          future_research: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          created_at?: string;
+          updated_at?: string;
+          subject: string;
+          summary: string;
+          books?: string | null;
+          future_research?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          created_at?: string;
+          updated_at?: string;
+          subject?: string;
+          summary?: string;
+          books?: string | null;
+          future_research?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
